@@ -149,6 +149,57 @@
   table.score td,table.score th{ padding:7px; border-bottom:1px solid rgba(255,255,255,.15); text-align:left; font-size:.88rem; }
   .good{ color:#7cf08a; font-weight:700; } .bad{ color:#ff9b9b; font-weight:700; }
   .win{ font-size:1.25rem; color:var(--gold); font-weight:800; text-align:center; margin:10px 0; text-shadow:0 0 20px rgba(243,198,75,.6); }
+
+  /* ===================== CHAT ===================== */
+  #chat:empty{ display:none; }
+
+  /* lobby: pannello ancorato in basso, sempre aperto */
+  .chat-dock{ position:fixed; left:50%; transform:translateX(-50%); bottom:0;
+    width:100%; max-width:540px; z-index:40;
+    background:linear-gradient(180deg, rgba(0,0,0,.42), rgba(0,0,0,.6));
+    border-top:1px solid rgba(255,255,255,.14); border-radius:16px 16px 0 0;
+    box-shadow:0 -10px 30px rgba(0,0,0,.4); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    display:flex; flex-direction:column; }
+  /* lascia spazio in fondo alla pagina così il dock non copre i contenuti */
+  body.has-dock #app{ padding-bottom:230px; }
+
+  .chat-head{ font-weight:800; font-size:.9rem; padding:9px 12px;
+    border-bottom:1px solid rgba(255,255,255,.10); display:flex; align-items:center; justify-content:space-between; }
+  .chat-x{ width:auto; margin:0; padding:2px 9px; font-size:.9rem; border-radius:9px;
+    background:rgba(255,255,255,.14); color:#fff; box-shadow:none; border:1px solid rgba(255,255,255,.25); }
+  .chat-log{ flex:1; overflow-y:auto; padding:8px 12px; display:flex; flex-direction:column; gap:5px;
+    max-height:34vh; }
+  .chat-dock .chat-log{ max-height:150px; }
+  .chat-empty{ opacity:.6; font-size:.8rem; text-align:center; padding:14px 0; }
+  .chat-line{ font-size:.86rem; line-height:1.3; max-width:88%; align-self:flex-start;
+    background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08);
+    border-radius:12px; padding:5px 9px; word-break:break-word; }
+  .chat-line.mine{ align-self:flex-end; background:linear-gradient(180deg, rgba(243,198,75,.22), rgba(243,198,75,.12));
+    border-color:rgba(243,198,75,.3); }
+  .chat-nm{ display:block; font-size:.68rem; font-weight:800; color:var(--gold); opacity:.95; margin-bottom:1px; }
+  .chat-line.mine .chat-nm{ color:#ffe39a; }
+  .chat-bd{ display:block; }
+
+  .chat-input{ display:flex; gap:7px; padding:9px 12px; border-top:1px solid rgba(255,255,255,.10);
+    padding-bottom:calc(9px + env(safe-area-inset-bottom)); }
+  .chat-input input{ flex:1; padding:10px; }
+  .chat-input button{ width:auto; margin:0; padding:10px 16px; }
+
+  /* partita: tastino flottante + sheet slide-up */
+  .chat-float{ position:fixed; right:14px; bottom:14px; z-index:40; }
+  .chat-fab{ width:54px; height:54px; padding:0; margin:0; border-radius:50%;
+    font-size:1.5rem; box-shadow:0 6px 16px rgba(0,0,0,.45); position:relative; }
+  .chat-badge{ position:absolute; top:-4px; right:-4px; min-width:20px; height:20px; padding:0 5px;
+    border-radius:999px; background:#b0353a; color:#fff; font-size:.72rem; font-weight:800;
+    display:flex; align-items:center; justify-content:center; border:1.5px solid rgba(255,255,255,.8); }
+  .chat-sheet{ position:fixed; left:50%; transform:translateX(-50%); bottom:0;
+    width:100%; max-width:540px; z-index:41;
+    background:linear-gradient(180deg, rgba(0,0,0,.5), rgba(0,0,0,.72));
+    border-top:1px solid rgba(255,255,255,.16); border-radius:16px 16px 0 0;
+    box-shadow:0 -12px 34px rgba(0,0,0,.5); backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px);
+    display:flex; flex-direction:column; animation:chatUp .22s ease both; }
+  @keyframes chatUp{ from{ transform:translate(-50%,100%);} to{ transform:translate(-50%,0);} }
+  @media(prefers-reduced-motion:reduce){ .chat-sheet{ animation:none; } }
 </style>
 </head>
 <body>
@@ -272,6 +323,7 @@ async function enterGame(){
     .eq("game_id", gameId).order("created_at", { ascending:true }).limit(100);
   chatMessages = c.data || [];
   chatUnread = 0;
+  chatOpen = false;
   renderChat();
 }
 
@@ -602,7 +654,11 @@ async function doSendMessage(){
   const body = el.value.trim().slice(0,300);
   if(!body) return;
   el.value = "";                 // svuota subito; il messaggio arriva via realtime
-  await invoke("send_message", { gameId, body });
+  const res = await invoke("send_message", { gameId, body });
+  if(!res){                      // invio fallito (es. anti-spam): ripristina la bozza
+    const el2 = document.getElementById("chat-text");
+    if(el2 && !el2.value) el2.value = body;
+  }
 }
 </script>
 </body>
