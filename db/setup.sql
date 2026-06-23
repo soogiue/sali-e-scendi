@@ -81,9 +81,21 @@ create table if not exists public.round_results (
   created_at   timestamptz not null default now()
 );
 
+-- Messaggi di chat di una stanza (PUBBLICI ai membri; scritti solo dalla Edge Function)
+create table if not exists public.chat_messages (
+  id           uuid primary key default gen_random_uuid(),
+  game_id      uuid not null references public.games(id) on delete cascade,
+  user_id      uuid not null,
+  seat         int,
+  display_name text not null,
+  body         text not null,
+  created_at   timestamptz not null default now()
+);
+
 create index if not exists idx_game_players_game on public.game_players(game_id);
 create index if not exists idx_hands_owner       on public.hands(user_id);
 create index if not exists idx_round_results_game on public.round_results(game_id, round_index);
+create index if not exists idx_chat_messages_game on public.chat_messages(game_id, created_at);
 
 -- ---------- FUNZIONE DI SUPPORTO (membership) ----------
 -- SECURITY DEFINER: legge game_players bypassando la RLS, così le policy
@@ -106,6 +118,7 @@ alter table public.games          enable row level security;
 alter table public.game_players   enable row level security;
 alter table public.hands          enable row level security;
 alter table public.round_results  enable row level security;
+alter table public.chat_messages  enable row level security;
 
 -- Niente policy di INSERT/UPDATE/DELETE per i client:
 -- tutte le scritture passano dalla Edge Function (service_role), che bypassa la RLS.
@@ -135,6 +148,12 @@ create policy round_results_select on public.round_results
   for select to authenticated
   using ( public.is_game_member(game_id) );
 
+-- chat_messages: leggibili dai membri della partita
+drop policy if exists chat_select on public.chat_messages;
+create policy chat_select on public.chat_messages
+  for select to authenticated
+  using ( public.is_game_member(game_id) );
+
 -- ---------- REALTIME ----------
 -- Fa sì che i client ricevano in tempo reale le modifiche (rispettando la RLS:
 -- le modifiche a 'hands' arrivano solo al proprietario della mano).
@@ -142,6 +161,7 @@ alter publication supabase_realtime add table public.games;
 alter publication supabase_realtime add table public.game_players;
 alter publication supabase_realtime add table public.hands;
 alter publication supabase_realtime add table public.round_results;
+alter publication supabase_realtime add table public.chat_messages;
 
 -- ---------- trigger updated_at su games ----------
 create or replace function public.touch_updated_at()
