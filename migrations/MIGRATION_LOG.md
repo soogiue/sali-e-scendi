@@ -5,6 +5,21 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ## Migration applicate
 
+### ⏳ 002_chat_messages
+- **Stato:** PENDING (creata, non ancora applicata su Supabase)
+- **Creata:** 2026-06-23
+- **Autore:** soogiue
+- **Descrizione:** Nuova tabella `public.chat_messages` per la chat di stanza
+  (lobby + partita), con RLS di SELECT per i membri e Realtime.
+- **Schemi aggiunti:** nessuno
+- **Tabelle:** public.chat_messages
+- **Breaking:** No — solo aggiunte.
+- **Scopo:** Chat testuale tra i giocatori di una stanza.
+- **Note:** Scritta solo dalla Edge Function (service_role) via `send_message`.
+  `on delete cascade` verso `public.games`. Fuori dal dataset ML.
+
+---
+
 ### ⏳ 001_v1_game_history
 - **Stato:** PENDING (creata, non ancora applicata su Supabase)
 - **Creata:** 2026-06-23

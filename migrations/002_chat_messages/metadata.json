@@ -1,0 +1,14 @@
+{
+  "version": "002_chat_messages",
+  "description": "Add public.chat_messages (room chat) with member-only SELECT RLS and realtime; written only by the game Edge Function",
+  "author": "soogiue",
+  "created_at": "2026-06-23",
+  "applied_at": null,
+  "status": "pending",
+  "breaking": false,
+  "schemas_added": [],
+  "tables_affected": ["public.chat_messages"],
+  "views_added": [],
+  "reason": "Chat testuale tra i membri di una stanza (lobby sempre aperta + tastino in partita)",
+  "notes": "Scritta solo dalla Edge Function (service_role) via azione send_message. RLS con policy di SELECT per i membri (is_game_member). on delete cascade verso public.games. display_name/seat denormalizzati. Fuori dal dataset history/ML."
+}
