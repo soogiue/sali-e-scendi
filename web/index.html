@@ -154,6 +154,7 @@
 <body>
 <div id="app"><p class="center" style="margin-top:30vh">Caricamento…</p></div>
 <div id="err" class="err"></div>
+<div id="chat"></div>
 
 <script src="config.js"></script>
 <script type="module">
@@ -176,6 +177,9 @@ let gameId=null, myCode=null, mySeat=null;
 let game=null, players=[], myHand=[], roundResults=[];
 let channel=null, lastAutoContinue="";
 let lastTO={ key:"", at:0 }; // throttling chiamate timeout
+let chatMessages = [];     // messaggi della stanza, ordinati per created_at
+let chatOpen = false;      // sheet aperta in partita?
+let chatUnread = 0;        // contatore non letti (badge in partita)
 
 // ---- helpers regole (solo per la UI; il server è autoritativo) ----
 function legalForUI(hand, leadSeed){
@@ -215,7 +219,7 @@ function avColor(name){
   }
   myUserId = session.user.id;
   setInterval(tickTimer, 200); // timer del turno (lato client)
-  renderHome();
+  render();
 })();
 
 async function invoke(action, payload){
@@ -259,8 +263,16 @@ async function enterGame(){
     const filter = table==="games" ? ("id=eq."+gameId) : ("game_id=eq."+gameId);
     channel.on("postgres_changes", { event:"*", schema:"public", table, filter }, ()=>refreshAll());
   }
+  channel.on("postgres_changes",
+    { event:"INSERT", schema:"public", table:"chat_messages", filter:"game_id=eq."+gameId },
+    (payload)=> onChatInsert(payload.new));
   channel.subscribe();
   await refreshAll();
+  const c = await supabase.from("chat_messages").select("*")
+    .eq("game_id", gameId).order("created_at", { ascending:true }).limit(100);
+  chatMessages = c.data || [];
+  chatUnread = 0;
+  renderChat();
 }
 
 async function refreshAll(){
@@ -280,6 +292,15 @@ async function refreshAll(){
     roundResults = rr.data || [];
   }
   render();
+}
+
+// Nuovo messaggio di chat dal realtime: append (con dedup) e ridisegna SOLO la chat.
+function onChatInsert(row){
+  if(chatMessages.some(m=>m.id===row.id)) return;
+  chatMessages.push(row);
+  const visible = game && (game.status==="lobby" || chatOpen);
+  if(!visible && row.user_id!==myUserId) chatUnread++;
+  renderChat();
 }
 
 // ---- TIMER DEL TURNO (client) ----
@@ -391,7 +412,13 @@ function myHandHTML(playable, leadSeed){
 }
 
 // ---- router ----
+// router principale: disegna il corpo della pagina e (sempre) la chat
 function render(){
+  renderBody();
+  renderChat();
+}
+
+function renderBody(){
   if(!game){ renderHome(); return; }
   if(game.status==="lobby"){ return renderWaiting(); }
   switch(game.phase){
@@ -492,6 +519,90 @@ function renderFinished(){
   '<div class="panel"><table class="score"><tr><th>#</th><th>Giocatore</th><th>Punti</th></tr>'+
   order.map((p,i)=>'<tr><td>'+(medals[i]||(i+1))+'</td><td>'+esc(p.display_name)+'</td><td>'+p.score+'</td></tr>').join("")+
   '</table><button onclick="location.reload()">Nuova partita</button></div>';
+}
+
+// ---- CHAT (componente indipendente dal render del gioco) ----
+function chatLineHTML(m){
+  const mine = m.user_id===myUserId;
+  return '<div class="chat-line'+(mine?" mine":"")+'">'+
+    '<span class="chat-nm">'+esc(m.display_name)+'</span>'+
+    '<span class="chat-bd">'+esc(m.body)+'</span></div>';
+}
+
+function chatLogHTML(){
+  if(!chatMessages.length) return '<div class="chat-empty">Nessun messaggio. Scrivi tu il primo!</div>';
+  return chatMessages.map(chatLineHTML).join("");
+}
+
+// Disegna la chat nel nodo #chat. Preserva il testo in scrittura e il focus.
+function renderChat(){
+  const root = document.getElementById("chat");
+  if(!root) return;
+  if(!game){ root.className=""; root.innerHTML=""; document.body.classList.remove("has-dock"); return; }
+
+  // preserva bozza + focus prima di ricostruire il DOM
+  const prev = document.getElementById("chat-text");
+  const draft = prev ? prev.value : "";
+  const hadFocus = prev && document.activeElement===prev;
+
+  const inLobby = game.status==="lobby";
+  if(inLobby){
+    root.className = "chat-dock";
+    root.innerHTML =
+      '<div class="chat-head">💬 Chat</div>'+
+      '<div class="chat-log" id="chat-log">'+chatLogHTML()+'</div>'+
+      '<div class="chat-input">'+
+        '<input id="chat-text" maxlength="300" placeholder="Scrivi un messaggio…" autocomplete="off">'+
+        '<button id="chat-send">Invia</button>'+
+      '</div>';
+    document.body.classList.add("has-dock");
+  } else {
+    const badge = chatUnread>0 ? '<span class="chat-badge">'+(chatUnread>99?"99+":chatUnread)+'</span>' : '';
+    const sheet = chatOpen
+      ? '<div class="chat-sheet">'+
+          '<div class="chat-head">💬 Chat <button id="chat-close" class="chat-x" aria-label="Chiudi">✕</button></div>'+
+          '<div class="chat-log" id="chat-log">'+chatLogHTML()+'</div>'+
+          '<div class="chat-input">'+
+            '<input id="chat-text" maxlength="300" placeholder="Scrivi un messaggio…" autocomplete="off">'+
+            '<button id="chat-send">Invia</button>'+
+          '</div>'+
+        '</div>'
+      : '';
+    root.className = "chat-float";
+    root.innerHTML = '<button class="chat-fab" id="chat-fab" aria-label="Chat">💬'+badge+'</button>'+sheet;
+    document.body.classList.remove("has-dock");
+  }
+
+  // ripristina bozza + focus
+  const ta = document.getElementById("chat-text");
+  if(ta){ ta.value = draft; if(hadFocus){ ta.focus(); ta.setSelectionRange(draft.length, draft.length); } }
+  wireChat();
+  scrollChatToBottom();
+}
+
+function wireChat(){
+  const send = document.getElementById("chat-send");
+  if(send) send.onclick = doSendMessage;
+  const text = document.getElementById("chat-text");
+  if(text) text.onkeydown = (e)=>{ if(e.key==="Enter"){ e.preventDefault(); doSendMessage(); } };
+  const fab = document.getElementById("chat-fab");
+  if(fab) fab.onclick = ()=>{ chatOpen=true; chatUnread=0; renderChat(); };
+  const close = document.getElementById("chat-close");
+  if(close) close.onclick = ()=>{ chatOpen=false; renderChat(); };
+}
+
+function scrollChatToBottom(){
+  const log = document.getElementById("chat-log");
+  if(log) log.scrollTop = log.scrollHeight;
+}
+
+async function doSendMessage(){
+  const el = document.getElementById("chat-text");
+  if(!el) return;
+  const body = el.value.trim().slice(0,300);
+  if(!body) return;
+  el.value = "";                 // svuota subito; il messaggio arriva via realtime
+  await invoke("send_message", { gameId, body });
 }
 </script>
 </body>
