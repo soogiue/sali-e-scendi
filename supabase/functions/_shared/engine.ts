@@ -167,3 +167,29 @@ export function forbiddenLastDeclare(
   const f = nCards - sum;
   return f >= 0 && f <= nCards ? f : null;
 }
+
+// ---------- MOSSE AUTOMATICHE (allo scadere del timer di turno) ----------
+
+// Carta da giocare in automatico: la piu' DEBOLE tra le legali
+// (strength piu' alto = carta piu' debole). Cosi' il timeout non "spreca" carte forti.
+export function autoPickCard(
+  hand: readonly Card[], leadSeed: Seed | null, hierarchy: Hierarchy,
+): Card {
+  const legal = legalCards(hand, leadSeed);
+  let worst = legal[0];
+  for (const c of legal) {
+    if (cardStrength(c.rank, hierarchy) > cardStrength(worst.rank, hierarchy)) worst = c;
+  }
+  return worst;
+}
+
+// Dichiarazione automatica valida: prova 0; se sei l'ultimo e 0 e' vietato, usa 1
+// (nCards >= 1 sempre, quindi 1 e' un valore valido nel range).
+export function autoPickDeclare(
+  otherDeclares: readonly number[], nCards: number, isLast: boolean,
+): number {
+  if (!isLast) return 0;
+  const forb = forbiddenLastDeclare(otherDeclares, nCards);
+  if (forb === 0) return Math.min(1, nCards);
+  return 0;
+}

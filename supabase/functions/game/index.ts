@@ -10,6 +10,8 @@
 //   - declare     { gameId, value }
 //   - play_card   { gameId, card:{seed,rank} }
 //   - continue    { gameId }   (avanza dopo presa conclusa / fine round)
+//   - timeout     { gameId }   (chiunque: se il timer del turno e' scaduto,
+//                               il server gioca/dichiara in automatico)
 // ============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -17,6 +19,9 @@ import * as E from "../_shared/engine.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+// Secondi a disposizione di ogni giocatore per ogni mossa (dichiarazione o carta).
+const TURN_SECONDS = 15;
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -28,6 +33,11 @@ const json = (data: unknown, status = 200) =>
     status,
     headers: { ...cors, "Content-Type": "application/json" },
   });
+
+// Scadenza del prossimo turno (ISO string), TURN_SECONDS nel futuro.
+function nextDeadline(): string {
+  return new Date(Date.now() + TURN_SECONDS * 1000).toISOString();
+}
 
 function genCode(): string {
   const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // niente caratteri ambigui
@@ -57,6 +67,7 @@ Deno.serve(async (req) => {
       case "declare":       return await declare(db, user.id, body);
       case "play_card":     return await playCard(db, user.id, body);
       case "continue":      return await continueAfter(db, user.id, body);
+      case "timeout":       return await timeoutAction(db, user.id, body);
       default:              return json({ error: "Azione sconosciuta: " + action }, 400);
     }
   } catch (e) {
@@ -67,7 +78,8 @@ Deno.serve(async (req) => {
 // ---------------- AZIONI ----------------
 
 async function createGame(db: any, userId: string, body: any) {
-  const displayName = String(body.displayName ?? "Giocatore").slice(0, 14);
+  const displayName = cleanName(body.displayName);
+  if (!displayName) return json({ error: "Inserisci il tuo nome" }, 400);
   // codice unico
   let code = genCode();
   for (let i = 0; i < 6; i++) {
@@ -89,7 +101,8 @@ async function createGame(db: any, userId: string, body: any) {
 
 async function joinGame(db: any, userId: string, body: any) {
   const code = String(body.code ?? "").toUpperCase().trim();
-  const displayName = String(body.displayName ?? "Giocatore").slice(0, 14);
+  const displayName = cleanName(body.displayName);
+  if (!displayName) return json({ error: "Inserisci il tuo nome" }, 400);
 
   const { data: game } = await db.from("games").select("*").eq("code", code).maybeSingle();
   if (!game) return json({ error: "Stanza non trovata" }, 404);
@@ -97,9 +110,13 @@ async function joinGame(db: any, userId: string, body: any) {
 
   const { data: players } = await db.from("game_players")
     .select("*").eq("game_id", game.id).order("seat");
-  // già dentro?
+  // già dentro? (aggiorna comunque il nome scelto)
   const mine = (players ?? []).find((p: any) => p.user_id === userId);
-  if (mine) return json({ gameId: game.id, code, seat: mine.seat });
+  if (mine) {
+    await db.from("game_players").update({ display_name: displayName })
+      .eq("game_id", game.id).eq("user_id", userId);
+    return json({ gameId: game.id, code, seat: mine.seat });
+  }
 
   if ((players?.length ?? 0) >= 5) return json({ error: "Stanza piena (max 5)" }, 400);
   const seat = players?.length ?? 0;
@@ -153,19 +170,7 @@ async function declare(db: any, userId: string, body: any) {
       return json({ error: "Non puoi dichiarare " + forb + " (la somma non può fare " + game.n_cards + ")" }, 400);
   }
 
-  await db.from("game_players").update({ declared: value })
-    .eq("game_id", game.id).eq("seat", me.seat);
-
-  if (isLast) {
-    // tutte fatte -> si gioca; apre il primo (trick_lead_seat)
-    await db.from("games").update({
-      phase: "playing", current_turn_seat: game.trick_lead_seat,
-      trick_index: 0, trick_plays: [],
-    }).eq("id", game.id);
-  } else {
-    const next = (game.current_turn_seat + 1) % n;
-    await db.from("games").update({ current_turn_seat: next }).eq("id", game.id);
-  }
+  await applyDeclare(db, game, me.seat, value, isLast, n);
   return json({ ok: true });
 }
 
@@ -178,51 +183,20 @@ async function playCard(db: any, userId: string, body: any) {
   const card = body.card as E.Card;
   if (!card || !card.seed || !card.rank) return json({ error: "Carta mancante" }, 400);
 
-  // mano del giocatore
-  const { data: handRow } = await db.from("hands").select("*")
-    .eq("game_id", game.id).eq("round_index", game.round_index).eq("seat", me.seat).single();
-  if (!handRow) return json({ error: "Mano non trovata" }, 400);
-  const hand: E.Card[] = handRow.cards;
+  const hand = await loadHand(db, game, me.seat);
+  if (!hand) return json({ error: "Mano non trovata" }, 400);
 
   const plays = (game.trick_plays ?? []) as E.Play[];
   const leadSeed: E.Seed | null = plays.length ? plays[0].card.seed : null;
   if (!E.isLegalPlay(hand, leadSeed, card))
     return json({ error: "Mossa non valida: devi rispondere al seme se puoi" }, 400);
 
-  // togli la carta dalla mano
-  const idx = hand.findIndex((c) => c.seed === card.seed && c.rank === card.rank);
-  if (idx < 0) return json({ error: "Non hai questa carta" }, 400);
-  hand.splice(idx, 1);
-  await db.from("hands").update({ cards: hand })
-    .eq("game_id", game.id).eq("round_index", game.round_index).eq("seat", me.seat);
-
-  const newPlays = [...plays, { seat: me.seat, card }];
-  const n = game.num_players;
-
-  if (newPlays.length < n) {
-    const next = (game.current_turn_seat + 1) % n;
-    await db.from("games").update({ trick_plays: newPlays, current_turn_seat: next }).eq("id", game.id);
-    return json({ ok: true });
-  }
-
-  // presa completa -> vincitore
-  const briscolaSeed: E.Seed | null = game.briscola ? game.briscola.seed : null;
-  const hierarchy = game.is_no_trump ? E.HIER_TRESETTE : E.HIER_BRISCOLA;
-  const winner = E.resolveTrick(newPlays, briscolaSeed, hierarchy);
-
-  const winnerTaken = await taken(db, game.id, winner);
-  await db.from("game_players").update({ taken: winnerTaken + 1 })
-    .eq("game_id", game.id).eq("seat", winner);
-
-  await db.from("games").update({
-    trick_plays: newPlays, phase: "trick_done",
-    last_trick_winner: winner, current_turn_seat: winner,
-  }).eq("id", game.id);
-  return json({ ok: true, trickWinner: winner });
+  const res = await applyPlay(db, game, me.seat, card, hand);
+  return json({ ok: true, ...res });
 }
 
 async function continueAfter(db: any, userId: string, body: any) {
-  const { game, me } = await loadGameAndPlayer(db, body.gameId, userId);
+  const { game } = await loadGameAndPlayer(db, body.gameId, userId);
   if (!game) return json({ error: "Partita non trovata" }, 404);
   const n = game.num_players;
 
@@ -233,12 +207,13 @@ async function continueAfter(db: any, userId: string, body: any) {
         phase: "playing", trick_index: nextTrick,
         trick_lead_seat: game.last_trick_winner,
         current_turn_seat: game.last_trick_winner, trick_plays: [],
+        turn_deadline: nextDeadline(),
       }).eq("id", game.id);
       return json({ ok: true });
     }
     // fine round -> punteggi
     await scoreRoundDB(db, game);
-    await db.from("games").update({ phase: "round_end" }).eq("id", game.id);
+    await db.from("games").update({ phase: "round_end", turn_deadline: null }).eq("id", game.id);
     return json({ ok: true });
   }
 
@@ -252,7 +227,7 @@ async function continueAfter(db: any, userId: string, body: any) {
         .select("*").eq("game_id", game.id).order("score", { ascending: false });
       const winnerSeat = players?.[0]?.seat ?? null;
       await db.from("games").update({
-        phase: "finished", status: "finished", winner_seat: winnerSeat,
+        phase: "finished", status: "finished", winner_seat: winnerSeat, turn_deadline: null,
       }).eq("id", game.id);
     }
     return json({ ok: true });
@@ -261,14 +236,118 @@ async function continueAfter(db: any, userId: string, body: any) {
   return json({ error: "Niente da continuare in questa fase" }, 400);
 }
 
-// ---------------- HELPERS ----------------
+// Timeout: chiunque puo' chiamarla. Se il turno corrente e' scaduto, il server
+// esegue una mossa automatica per il giocatore di turno. Idempotente: se il
+// tempo non e' scaduto, non fa nulla (cosi' le chiamate "anticipate" non barano).
+async function timeoutAction(db: any, userId: string, body: any) {
+  const { game, me } = await loadGameAndPlayer(db, body.gameId, userId);
+  if (!game) return json({ error: "Partita non trovata" }, 404);
+  if (!me) return json({ error: "Non sei in questa partita" }, 403);
+  if (game.phase !== "declaring" && game.phase !== "playing")
+    return json({ ok: true, skipped: "phase" });
+  if (!game.turn_deadline) return json({ ok: true, skipped: "no-deadline" });
+
+  // 1s di tolleranza per il disallineamento di orologio tra client e server.
+  const deadlineMs = new Date(game.turn_deadline).getTime();
+  if (Date.now() < deadlineMs - 1000) return json({ ok: true, skipped: "not-expired" });
+
+  const n = game.num_players;
+  const seat = game.current_turn_seat;
+
+  if (game.phase === "declaring") {
+    const { data: players } = await db.from("game_players")
+      .select("*").eq("game_id", game.id).order("seat");
+    const declaredCount = players.filter((p: any) => p.declared !== null).length;
+    const isLast = declaredCount === n - 1;
+    const others = players.filter((p: any) => p.declared !== null).map((p: any) => p.declared);
+    const value = E.autoPickDeclare(others, game.n_cards, isLast);
+    await applyDeclare(db, game, seat, value, isLast, n);
+    return json({ ok: true, auto: "declare", seat, value });
+  }
+
+  // playing
+  const hand = await loadHand(db, game, seat);
+  if (!hand || hand.length === 0) return json({ ok: true, skipped: "no-hand" });
+  const plays = (game.trick_plays ?? []) as E.Play[];
+  const leadSeed: E.Seed | null = plays.length ? plays[0].card.seed : null;
+  const hierarchy = game.is_no_trump ? E.HIER_TRESETTE : E.HIER_BRISCOLA;
+  const card = E.autoPickCard(hand, leadSeed, hierarchy);
+  const res = await applyPlay(db, game, seat, card, hand);
+  return json({ ok: true, auto: "play", seat, card, ...res });
+}
+
+// ---------------- HELPERS DI MUTAZIONE ----------------
+
+// Registra la dichiarazione di `seat`, poi avanza il turno o apre il gioco.
+async function applyDeclare(db: any, game: any, seat: number, value: number, isLast: boolean, n: number) {
+  await db.from("game_players").update({ declared: value })
+    .eq("game_id", game.id).eq("seat", seat);
+
+  if (isLast) {
+    // tutte fatte -> si gioca; apre il primo (trick_lead_seat)
+    await db.from("games").update({
+      phase: "playing", current_turn_seat: game.trick_lead_seat,
+      trick_index: 0, trick_plays: [], turn_deadline: nextDeadline(),
+    }).eq("id", game.id);
+  } else {
+    const next = (game.current_turn_seat + 1) % n;
+    await db.from("games").update({
+      current_turn_seat: next, turn_deadline: nextDeadline(),
+    }).eq("id", game.id);
+  }
+}
+
+// Gioca `card` (gia' verificata legale) dalla mano `hand` di `seat`:
+// toglie la carta, aggiorna il tavolo e, se la presa e' completa, risolve.
+async function applyPlay(db: any, game: any, seat: number, card: E.Card, hand: E.Card[]) {
+  const idx = hand.findIndex((c) => c.seed === card.seed && c.rank === card.rank);
+  if (idx < 0) return { error: "carta-non-in-mano" };
+  hand.splice(idx, 1);
+  await db.from("hands").update({ cards: hand })
+    .eq("game_id", game.id).eq("round_index", game.round_index).eq("seat", seat);
+
+  const plays = (game.trick_plays ?? []) as E.Play[];
+  const newPlays = [...plays, { seat, card }];
+  const n = game.num_players;
+
+  if (newPlays.length < n) {
+    const next = (game.current_turn_seat + 1) % n;
+    await db.from("games").update({
+      trick_plays: newPlays, current_turn_seat: next, turn_deadline: nextDeadline(),
+    }).eq("id", game.id);
+    return {};
+  }
+
+  // presa completa -> vincitore
+  const briscolaSeed: E.Seed | null = game.briscola ? game.briscola.seed : null;
+  const hierarchy = game.is_no_trump ? E.HIER_TRESETTE : E.HIER_BRISCOLA;
+  const winner = E.resolveTrick(newPlays, briscolaSeed, hierarchy);
+
+  const winnerTaken = await taken(db, game.id, winner);
+  await db.from("game_players").update({ taken: winnerTaken + 1 })
+    .eq("game_id", game.id).eq("seat", winner);
+
+  await db.from("games").update({
+    trick_plays: newPlays, phase: "trick_done",
+    last_trick_winner: winner, current_turn_seat: winner, turn_deadline: null,
+  }).eq("id", game.id);
+  return { trickWinner: winner };
+}
+
+// ---------------- HELPERS DI LETTURA ----------------
 
 async function loadGameAndPlayer(db: any, gameId: string, userId: string) {
   const { data: game } = await db.from("games").select("*").eq("id", gameId).single();
   if (!game) return { game: null, me: null };
   const { data: me } = await db.from("game_players").select("*")
-    .eq("game_id", gameId).eq("user_id", userId).single();
+    .eq("game_id", gameId).eq("user_id", userId).maybeSingle();
   return { game, me };
+}
+
+async function loadHand(db: any, game: any, seat: number): Promise<E.Card[] | null> {
+  const { data: handRow } = await db.from("hands").select("cards")
+    .eq("game_id", game.id).eq("round_index", game.round_index).eq("seat", seat).maybeSingle();
+  return handRow ? (handRow.cards as E.Card[]) : null;
 }
 
 async function taken(db: any, gameId: string, seat: number): Promise<number> {
@@ -276,6 +355,12 @@ async function taken(db: any, gameId: string, seat: number): Promise<number> {
     .eq("game_id", gameId).eq("seat", seat).single();
   return data?.taken ?? 0;
 }
+
+function cleanName(raw: unknown): string {
+  return String(raw ?? "").trim().slice(0, 14);
+}
+
+// ---------------- DISTRIBUZIONE / PUNTEGGI ----------------
 
 // Distribuisce un round e scrive tutto nel DB
 async function dealRoundDB(db: any, gameId: string, n: number, rounds: number[], roundIndex: number) {
@@ -299,7 +384,7 @@ async function dealRoundDB(db: any, gameId: string, n: number, rounds: number[],
     round_index: roundIndex, n_cards: nCards, dealer_seat: E.dealerFor(n, roundIndex),
     current_turn_seat: firstSeat, briscola: d.briscola, is_no_trump: d.isNoTrump,
     trick_index: 0, trick_lead_seat: firstSeat, trick_plays: [], last_trick_winner: null,
-    phase: "declaring", status: "playing",
+    phase: "declaring", status: "playing", turn_deadline: nextDeadline(),
   }).eq("id", gameId);
 }
 

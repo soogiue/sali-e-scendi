@@ -41,3 +41,12 @@ sali-e-scendi-online/
 · l'ultimo a dichiarare non può far combaciare la somma con le prese del round.
 
 > Il prototipo locale "pass-and-play" resta in `../sali-e-scendi.html` (un solo telefono).
+
+## Novità (v1.1)
+
+- **Nome obbligatorio** per creare o entrare in una stanza.
+- **Interfaccia a tavolo** stile PokerStars: giocatori disposti attorno all'ovale (tu sempre in basso), avatar generati automaticamente, carte giocate spinte verso il centro.
+- **Cerchietti accanto a ogni avatar**: 🟡 prese **dichiarate** nella mano corrente · 🔵 **punti totali**.
+- **Timer di turno da 15 secondi** con **auto-mossa** allo scadere (il server gioca la carta legale più debole / una dichiarazione valida), così la partita non si blocca.
+
+> ⚠️ Se avevi già fatto il setup prima della v1.1: **ri-esegui `db/setup.sql`** (aggiunge la colonna `turn_deadline`) e **ri-pubblica** la function con `supabase functions deploy game`.

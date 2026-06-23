@@ -35,9 +35,13 @@ create table if not exists public.games (
   trick_plays       jsonb not null default '[]'::jsonb,   -- [{seat,card}] carte sul tavolo (PUBBLICO)
   last_trick_winner int,
   winner_seat       int,                                  -- vincitore partita (a fine gioco)
+  turn_deadline     timestamptz,                          -- scadenza del turno corrente (timer 15s, auto-mossa allo scadere)
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );
+
+-- Per chi ha gia eseguito il setup in precedenza: aggiunge la colonna senza errori.
+alter table public.games add column if not exists turn_deadline timestamptz;
 
 -- I giocatori di una partita (dati PUBBLICI ai membri: nome, punteggio, dichiarazione, prese)
 create table if not exists public.game_players (
