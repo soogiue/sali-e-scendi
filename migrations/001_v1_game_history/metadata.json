@@ -1,0 +1,25 @@
+{
+  "version": "001_v1_game_history",
+  "description": "Add history schema for event-level game logging (deals, declarations, card plays, tricks, round/game outcomes) to build an ML training dataset for bots; also bootstraps internal.schema_migrations migration-log infrastructure",
+  "author": "soogiue",
+  "created_at": "2026-06-23",
+  "applied_at": null,
+  "status": "pending",
+  "breaking": false,
+  "schemas_added": ["history", "internal"],
+  "tables_affected": [
+    "history.games",
+    "history.players",
+    "history.rounds",
+    "history.deals",
+    "history.declarations",
+    "history.plays",
+    "history.tricks",
+    "history.round_outcomes",
+    "internal.schema_migrations",
+    "internal.schema_migrations_rollback"
+  ],
+  "views_added": ["history.ml_play_samples", "history.ml_declaration_samples"],
+  "reason": "Tracciare tutti i dati di ogni partita (chi ha dichiarato cosa con che carte e come e finita) per addestrare un modello ML che crei bot",
+  "notes": "Tabelle append-only scritte solo dalla Edge Function (service_role). Nessuna FK in cascade verso public.games: la cronologia sopravvive alla pulizia delle stanze. RLS abilitata senza policy di SELECT per i client; l'export del dataset usa la service_role. La scrittura dei dati dall'edge function e un passo successivo (questo step crea solo lo schema)."
+}
