@@ -1,0 +1,12 @@
+{
+  "name": "Sali e Scendi",
+  "short_name": "Sali e Scendi",
+  "description": "Gioco di carte italiano (Oh Hell!/Wizard) — online con gli amici",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#075a30",
+  "theme_color": "#0b6b3a",
+  "icons": []
+}

@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0b6b3a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Sali e Scendi — Online</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  :root{ --felt1:#0d7a42; --felt2:#075a30; --gold:#f3c64b; --ink:#10271a; --card-w:64px; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; padding:0; min-height:100%; }
+  body{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(circle at 50% 18%, var(--felt1), var(--felt2)); color:#fff;
+    min-height:100dvh; display:flex; justify-content:center; }
+  #app{ width:100%; max-width:520px; padding:14px 14px 36px; }
+  h1{ font-size:1.5rem; margin:.2em 0; text-align:center; }
+  h2{ font-size:1.15rem; margin:.4em 0; }
+  .sub{ opacity:.85; font-size:.85rem; text-align:center; margin-bottom:10px; }
+  button{ background:var(--gold); color:var(--ink); border:none; border-radius:14px; padding:13px 16px;
+    font-size:1.02rem; font-weight:700; cursor:pointer; box-shadow:0 3px 0 #b8901f; width:100%; margin-top:10px; font-family:inherit; }
+  button:active{ transform:translateY(2px); box-shadow:0 1px 0 #b8901f; }
+  button.ghost{ background:rgba(255,255,255,.12); color:#fff; box-shadow:none; border:1px solid rgba(255,255,255,.3); }
+  button:disabled{ background:#7d7d7d; color:#ddd; box-shadow:none; opacity:.6; cursor:not-allowed; }
+  .panel{ background:rgba(0,0,0,.22); border-radius:16px; padding:14px; margin:10px 0; }
+  .row{ display:flex; gap:8px; flex-wrap:wrap; }
+  label{ display:block; font-size:.85rem; margin:8px 0 4px; opacity:.9; }
+  input{ width:100%; padding:12px; border-radius:10px; border:none; font-size:1rem; text-transform:none; }
+  input.code{ text-transform:uppercase; letter-spacing:3px; font-weight:800; text-align:center; }
+  .hand{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:10px 0; }
+  .card{ width:var(--card-w); aspect-ratio:5/8; border-radius:8px; overflow:hidden; background:#fff;
+    box-shadow:0 2px 6px rgba(0,0,0,.5); position:relative; display:flex; align-items:center; justify-content:center; flex:0 0 auto; color:#222; }
+  .card img{ width:100%; height:100%; object-fit:contain; display:block; }
+  .card .lbl{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:.66rem; font-weight:700; text-align:center; padding:3px; }
+  .hand.playable .card{ opacity:.45; filter:grayscale(.4); }
+  .hand.playable .card.legal{ opacity:1; filter:none; cursor:pointer; box-shadow:0 0 0 3px var(--gold),0 2px 8px rgba(0,0,0,.5); }
+  .table{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; min-height:110px; align-items:center; background:rgba(0,0,0,.18); border-radius:14px; padding:12px; }
+  .seat{ text-align:center; } .seat .nm{ font-size:.72rem; opacity:.9; margin-bottom:4px; max-width:72px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .topbar{ display:flex; align-items:center; gap:8px; justify-content:space-between; flex-wrap:wrap; }
+  .briscola{ display:flex; align-items:center; gap:6px; } .briscola .card{ width:42px; }
+  .pill{ background:rgba(0,0,0,.3); border-radius:999px; padding:4px 10px; font-size:.76rem; }
+  .tresette{ background:#7a3ea0; }
+  .scores{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+  .chip{ background:rgba(255,255,255,.12); border-radius:999px; padding:6px 10px; font-size:.78rem; }
+  .chip b{ color:var(--gold); } .chip.turn{ outline:2px solid var(--gold); }
+  .numgrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(46px,1fr)); gap:8px; margin-top:8px; }
+  .numgrid button{ margin:0; padding:13px 0; }
+  .center{ text-align:center; } .tiny{ font-size:.74rem; opacity:.8; }
+  .big-code{ font-size:2rem; font-weight:800; color:var(--gold); letter-spacing:6px; text-align:center; margin:6px 0; }
+  .win{ font-size:1.25rem; color:var(--gold); font-weight:800; text-align:center; margin:10px 0; }
+  table.score{ width:100%; border-collapse:collapse; margin-top:8px; }
+  table.score td,table.score th{ padding:7px; border-bottom:1px solid rgba(255,255,255,.15); text-align:left; font-size:.88rem; }
+  .good{ color:#7cf08a; font-weight:700; } .bad{ color:#ff9b9b; font-weight:700; }
+  .err{ background:#b0353a; color:#fff; border-radius:10px; padding:10px; margin:10px 0; font-size:.88rem; display:none; }
+  .waitmsg{ text-align:center; opacity:.85; margin-top:10px; }
+</style>
+<style>
+/* ===================== MIGLIORIE GRAFICHE ===================== */
+:root{ --card-w:68px; }
+body{
+  background-color:#0a5e34;
+  background-image:
+    radial-gradient(140% 115% at 50% -10%, rgba(38,176,108,.55), rgba(6,64,34,0) 55%),
+    radial-gradient(125% 110% at 50% 120%, rgba(0,0,0,.6), rgba(0,0,0,0) 60%),
+    repeating-linear-gradient(45deg, rgba(255,255,255,.022) 0 2px, rgba(0,0,0,0) 2px 7px),
+    linear-gradient(160deg,#0f7e46,#063f24);
+  background-attachment:fixed;
+}
+h1{ color:#fff; letter-spacing:1px; text-shadow:0 2px 3px rgba(0,0,0,.45), 0 0 26px rgba(243,198,75,.30); }
+.sub{ opacity:.9; }
+#app>*{ animation:riseIn .32s ease both; }
+@keyframes riseIn{ from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+
+.panel{
+  background:linear-gradient(180deg, rgba(0,0,0,.30), rgba(0,0,0,.16));
+  border:1px solid rgba(255,255,255,.10); border-radius:18px;
+  box-shadow:0 12px 30px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+}
+button{
+  background:linear-gradient(180deg,#ffd969,#edae2c); color:#3a2a06;
+  font-weight:800; letter-spacing:.3px; border:1px solid rgba(255,255,255,.4);
+  box-shadow:0 4px 0 #b8861d, 0 9px 18px rgba(0,0,0,.28);
+}
+button:active{ transform:translateY(3px); box-shadow:0 1px 0 #b8861d, 0 4px 10px rgba(0,0,0,.22); }
+button.ghost{ background:linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.06)); color:#fff; border:1px solid rgba(255,255,255,.3); box-shadow:0 5px 14px rgba(0,0,0,.22); }
+button:disabled{ background:#6f6f6f; color:#d2d2d2; box-shadow:none; border-color:rgba(255,255,255,.15); }
+
+.card{
+  border-radius:11px; background:linear-gradient(180deg,#fff,#eef0ea);
+  border:1px solid rgba(0,0,0,.18); box-shadow:0 5px 12px rgba(0,0,0,.45);
+  transition:transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+.card img{ padding:3px; }
+.hand .card{ animation:dealIn .34s cubic-bezier(.2,.85,.25,1) both; }
+.hand .card:nth-child(2){animation-delay:.04s}.hand .card:nth-child(3){animation-delay:.08s}
+.hand .card:nth-child(4){animation-delay:.12s}.hand .card:nth-child(5){animation-delay:.16s}
+.hand .card:nth-child(6){animation-delay:.20s}.hand .card:nth-child(7){animation-delay:.24s}
+.hand .card:nth-child(8){animation-delay:.28s}.hand .card:nth-child(n+9){animation-delay:.32s}
+@keyframes dealIn{ from{opacity:0; transform:translateY(14px) scale(.9)} to{opacity:1; transform:none} }
+.hand.playable .card{ opacity:.5; filter:grayscale(.55) brightness(.9); }
+.hand.playable .card.legal{
+  opacity:1; filter:none; transform:translateY(-7px);
+  box-shadow:0 0 0 3px var(--gold), 0 12px 20px rgba(0,0,0,.45);
+  animation:legalPulse 1.7s ease-in-out infinite;
+}
+@keyframes legalPulse{ 0%,100%{box-shadow:0 0 0 3px rgba(243,198,75,.9),0 12px 20px rgba(0,0,0,.4)} 50%{box-shadow:0 0 0 6px rgba(243,198,75,.5),0 14px 24px rgba(0,0,0,.5)} }
+@media(hover:hover){ .hand.playable .card.legal:hover{ transform:translateY(-13px) scale(1.05); } }
+
+.table{
+  background:radial-gradient(circle at 50% 38%, rgba(255,255,255,.07), rgba(0,0,0,.24));
+  border:1.5px dashed rgba(243,198,75,.4); border-radius:18px;
+  box-shadow:inset 0 6px 22px rgba(0,0,0,.4);
+}
+.seat .card{ animation:dropIn .3s ease both; }
+@keyframes dropIn{ from{opacity:0; transform:translateY(-18px) rotate(-5deg)} to{opacity:1; transform:none} }
+
+.pill{ background:rgba(0,0,0,.36); border:1px solid rgba(255,255,255,.10); }
+.pill.tresette, .tresette{ background:linear-gradient(180deg,#9a5bc4,#6c33a0); border:1px solid rgba(255,255,255,.18); }
+.briscola .card{ transform:rotate(6deg); }
+
+.chip{ background:linear-gradient(180deg, rgba(255,255,255,.17), rgba(255,255,255,.07)); border:1px solid rgba(255,255,255,.14); box-shadow:0 2px 6px rgba(0,0,0,.18); }
+.chip.turn{ outline:2px solid var(--gold); box-shadow:0 0 14px rgba(243,198,75,.55); }
+.numgrid button{ box-shadow:0 3px 0 #b8861d, 0 6px 12px rgba(0,0,0,.22); }
+
+.win{ text-shadow:0 0 20px rgba(243,198,75,.6); animation:popWin .45s cubic-bezier(.2,1.5,.4,1) both; }
+@keyframes popWin{ from{opacity:0; transform:scale(.7)} to{opacity:1; transform:scale(1)} }
+table.score tr:hover td{ background:rgba(255,255,255,.04); }
+input{ box-shadow:inset 0 2px 6px rgba(0,0,0,.15); }
+
+.big-code{ text-shadow:0 0 22px rgba(243,198,75,.5); animation:popWin .5s cubic-bezier(.2,1.5,.4,1) both; }
+.err{ box-shadow:0 8px 22px rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.18); }
+input.code{ background:linear-gradient(180deg,#fff,#eee); }
+.waitmsg{ opacity:.9; }
+</style>
+</head>
+<body>
+<div id="app"><p class="center" style="margin-top:30vh">Caricamento…</p></div>
+<div id="err" class="err"></div>
+
+<script src="config.js"></script>
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const CFG = window.SALI_CONFIG || {};
+const CARD_BASE = CFG.CARD_BASE || "cards/";
+const SEED_IT = { cups:"Coppe", gold:"Denari", swords:"Spade", sticks:"Bastoni" };
+const RANK_IT = { Ace:"Asso","2":"2","3":"3","4":"4","5":"5","6":"6","7":"7", Jack:"Fante", Horse:"Cavallo", King:"Re" };
+
+const app = document.getElementById("app");
+const errBox = document.getElementById("err");
+function showError(msg){ errBox.textContent = "⚠️ " + msg; errBox.style.display="block"; setTimeout(()=>errBox.style.display="none", 5000); }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+// ---- stato locale ----
+let supabase, myUserId=null;
+let gameId=null, myCode=null, mySeat=null;
+let game=null, players=[], myHand=[], roundResults=[];
+let channel=null, lastAutoContinue="";
+
+// ---- helpers regole (solo per la UI; il server è autoritativo) ----
+function legalForUI(hand, leadSeed){
+  if(!leadSeed) return hand.slice();
+  const same = hand.filter(c=>c.seed===leadSeed);
+  return same.length ? same : hand.slice();
+}
+function forbiddenLastUI(others, nCards){
+  const sum = others.reduce((a,b)=>a+b,0); const f = nCards - sum;
+  return (f>=0 && f<=nCards) ? f : null;
+}
+
+// ---- avvio ----
+(async function init(){
+  if(!CFG.SUPABASE_URL || CFG.SUPABASE_URL.indexOf("INSERISCI")>=0){
+    app.innerHTML = '<div class="panel"><h2>Configurazione mancante</h2><p class="tiny">Apri <b>config.js</b> e inserisci SUPABASE_URL e SUPABASE_ANON_KEY (li trovi in Supabase → Project Settings → API).</p></div>';
+    return;
+  }
+  supabase = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+  let { data:{ session } } = await supabase.auth.getSession();
+  if(!session){
+    const { data, error } = await supabase.auth.signInAnonymously();
+    if(error){ app.innerHTML='<div class="panel">Errore login: '+esc(error.message)+'<p class="tiny">Hai abilitato "Anonymous sign-ins" in Supabase → Authentication → Providers?</p></div>'; return; }
+    session = data.session;
+  }
+  myUserId = session.user.id;
+  renderHome();
+})();
+
+async function invoke(action, payload){
+  const { data, error } = await supabase.functions.invoke("game", { body: { action, ...payload } });
+  if(error){
+    let msg = error.message || "Errore";
+    try{ const j = await error.context.json(); if(j.error) msg=j.error; }catch(e){}
+    showError(msg); return null;
+  }
+  if(data && data.error){ showError(data.error); return null; }
+  return data;
+}
+
+// ---- azioni ----
+async function doCreate(){
+  const name = (document.getElementById("nm").value||"").trim() || "Giocatore";
+  const res = await invoke("create_game", { displayName:name });
+  if(res){ gameId=res.gameId; myCode=res.code; mySeat=res.seat; await enterGame(); }
+}
+async function doJoin(){
+  const name = (document.getElementById("nm").value||"").trim() || "Giocatore";
+  const code = (document.getElementById("code").value||"").trim().toUpperCase();
+  if(code.length<4){ showError("Inserisci il codice stanza"); return; }
+  const res = await invoke("join_game", { code, displayName:name });
+  if(res){ gameId=res.gameId; myCode=res.code; mySeat=res.seat; await enterGame(); }
+}
+async function doStart(){ await invoke("start_game", { gameId }); }
+async function doDeclare(v){ await invoke("declare", { gameId, value:v }); }
+async function doPlay(card){ await invoke("play_card", { gameId, card }); }
+async function doContinue(){ await invoke("continue", { gameId }); }
+
+// esponi handler per onclick
+window.UI = { doCreate, doJoin, doStart, doDeclare, doPlay, doContinue };
+
+// ---- realtime + refresh ----
+async function enterGame(){
+  if(channel) await supabase.removeChannel(channel);
+  channel = supabase.channel("game:"+gameId);
+  for(const table of ["games","game_players","hands","round_results"]){
+    const filter = table==="games" ? ("id=eq."+gameId) : ("game_id=eq."+gameId);
+    channel.on("postgres_changes", { event:"*", schema:"public", table, filter }, ()=>refreshAll());
+  }
+  channel.subscribe();
+  await refreshAll();
+}
+
+async function refreshAll(){
+  const g = await supabase.from("games").select("*").eq("id", gameId).maybeSingle();
+  game = g.data;
+  if(!game){ return; }
+  const p = await supabase.from("game_players").select("*").eq("game_id", gameId).order("seat");
+  players = p.data || [];
+  const me = players.find(x=>x.user_id===myUserId);
+  if(me) mySeat = me.seat;
+  if(game.status!=="lobby"){
+    const h = await supabase.from("hands").select("cards").eq("game_id", gameId)
+      .eq("round_index", game.round_index).eq("seat", mySeat).maybeSingle();
+    myHand = (h.data && h.data.cards) ? h.data.cards : [];
+    const rr = await supabase.from("round_results").select("*").eq("game_id", gameId)
+      .eq("round_index", game.round_index).order("seat");
+    roundResults = rr.data || [];
+  }
+  render();
+}
+
+// ---- rendering ----
+function cardHTML(card, opts){ opts=opts||{};
+  const file = CARD_BASE + card.seed + "_" + card.rank + ".png";
+  const cls = ["card"]; if(opts.legal) cls.push("legal");
+  const onclick = opts.legal ? ' data-card=\''+JSON.stringify(card)+'\'' : '';
+  return '<div class="'+cls.join(" ")+'"'+onclick+(opts.legal?' role="button"':'')+'>'+
+    '<img src="'+esc(file)+'" alt="'+esc(RANK_IT[card.rank]+" di "+SEED_IT[card.seed])+'" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'+
+    '<span class="lbl" style="display:none">'+esc(RANK_IT[card.rank])+'<br>'+esc(SEED_IT[card.seed])+'</span></div>';
+}
+function nameOf(seat){ const p=players.find(x=>x.seat===seat); return p?p.display_name:("Posto "+seat); }
+function scoresHTML(turnSeat){
+  return '<div class="scores">'+players.slice().sort((a,b)=>a.seat-b.seat).map(p=>
+    '<span class="chip'+(p.seat===turnSeat?" turn":"")+'">'+esc(p.display_name)+' <b>'+p.score+'</b></span>').join("")+'</div>';
+}
+function statusHTML(){
+  return '<div class="scores" style="margin-top:8px">'+players.slice().sort((a,b)=>a.seat-b.seat).map(p=>
+    '<span class="chip">'+esc(p.display_name)+' · dich <b>'+(p.declared==null?"–":p.declared)+'</b> · prese <b>'+p.taken+'</b></span>').join("")+'</div>';
+}
+function infoHTML(){
+  const briscBox = game.is_no_trump ? '<span class="pill tresette">TRESETTE · niente briscola</span>'
+    : (game.briscola ? '<div class="briscola"><span class="tiny">Briscola</span>'+cardHTML(game.briscola)+'</div>' : '');
+  return '<div class="topbar"><span class="pill">Round '+(game.round_index+1)+'/'+game.rounds.length+' · '+game.n_cards+' carte</span>'+briscBox+'</div>';
+}
+function tableHTML(){
+  const plays = game.trick_plays||[];
+  if(!plays.length) return '<div class="table"><span class="tiny">Tavolo vuoto</span></div>';
+  return '<div class="table">'+plays.map(pl=>'<div class="seat"><div class="nm">'+esc(nameOf(pl.seat))+'</div>'+cardHTML(pl.card)+'</div>').join("")+'</div>';
+}
+function myHandHTML(playable, leadSeed){
+  if(!myHand.length) return "";
+  if(!playable) return '<div class="hand">'+myHand.map(c=>cardHTML(c)).join("")+'</div>';
+  const legal = legalForUI(myHand, leadSeed); const key={}; legal.forEach(c=>key[c.seed+"_"+c.rank]=true);
+  return '<div class="hand playable">'+myHand.map(c=>cardHTML(c,{legal:!!key[c.seed+"_"+c.rank]})).join("")+'</div>';
+}
+
+function render(){
+  if(!game){ renderHome(); return; }
+  if(game.status==="lobby"){ return renderWaiting(); }
+  switch(game.phase){
+    case "declaring": return renderDeclaring();
+    case "playing": return renderPlaying();
+    case "trick_done": return renderTrickDone();
+    case "round_end": return renderRoundEnd();
+    case "finished": return renderFinished();
+    default: return renderWaiting();
+  }
+}
+
+function renderHome(){
+  game=null;
+  app.innerHTML =
+  '<h1>🂡 Sali e Scendi</h1><p class="sub">Gioca online con gli amici, ognuno sul suo telefono</p>'+
+  '<div class="panel"><label>Il tuo nome</label><input id="nm" maxlength="14" placeholder="Es. Gio">'+
+    '<button onclick="UI.doCreate()">Crea una stanza</button></div>'+
+  '<div class="panel"><label>Oppure entra con un codice</label><input id="code" class="code" maxlength="4" placeholder="ABCD">'+
+    '<button class="ghost" onclick="UI.doJoin()">Entra nella stanza</button></div>';
+}
+function renderWaiting(){
+  const isHost = game.host_user===myUserId; const n=players.length;
+  app.innerHTML =
+  '<h1>Stanza creata</h1><p class="sub">Condividi questo codice con gli amici</p>'+
+  '<div class="panel center"><div class="big-code">'+esc(myCode)+'</div>'+
+    '<p class="tiny">Giocatori ('+n+'/5):</p><div class="scores" style="justify-content:center">'+
+    players.map(p=>'<span class="chip">'+esc(p.display_name)+(p.seat===0?" 👑":"")+'</span>').join("")+'</div>'+
+    (isHost
+      ? (n>=4 ? '<button onclick="UI.doStart()">Inizia partita ('+n+' giocatori)</button>'
+              : '<p class="waitmsg">Servono almeno 4 giocatori (max 5).</p>')
+      : '<p class="waitmsg">In attesa che l\'host inizi…</p>')+
+  '</div>';
+}
+function renderDeclaring(){
+  const myTurn = game.current_turn_seat===mySeat;
+  let extra="";
+  if(myTurn){
+    const declaredCount = players.filter(p=>p.declared!=null).length;
+    const isLast = declaredCount===game.num_players-1;
+    let forbidden=null;
+    if(isLast){ const others=players.filter(p=>p.declared!=null).map(p=>p.declared); forbidden=forbiddenLastUI(others, game.n_cards); }
+    let btns="";
+    for(let v=0; v<=game.n_cards; v++){ const dis=(isLast&&v===forbidden); btns+='<button '+(dis?"disabled":"")+' data-decl="'+v+'">'+v+'</button>'; }
+    extra = '<h2>Quante prese fai?</h2>'+(isLast&&forbidden!=null?'<p class="tiny">⚠️ Non puoi dichiarare <b>'+forbidden+'</b>.</p>':'')+'<div class="numgrid">'+btns+'</div>';
+  } else {
+    extra = '<p class="waitmsg">In attesa della dichiarazione di <b>'+esc(nameOf(game.current_turn_seat))+'</b>…</p>';
+  }
+  app.innerHTML = infoHTML()+scoresHTML(game.current_turn_seat)+
+    '<div class="panel">'+extra+myHandHTML(false)+'</div>'+statusHTML();
+  if(myTurn) document.querySelectorAll("[data-decl]").forEach(b=>b.onclick=()=>UI.doDeclare(parseInt(b.dataset.decl,10)));
+}
+function renderPlaying(){
+  const myTurn = game.current_turn_seat===mySeat;
+  const plays = game.trick_plays||[];
+  const leadSeed = plays.length ? plays[0].card.seed : null;
+  app.innerHTML = infoHTML()+scoresHTML(game.current_turn_seat)+tableHTML()+
+    '<div class="panel"><h2>'+(myTurn?"Tocca a te":("Gioca: "+esc(nameOf(game.current_turn_seat))))+'</h2>'+
+    (myTurn? '<p class="tiny">'+(leadSeed?("Seme di uscita: <b>"+esc(SEED_IT[leadSeed])+"</b>"):"Apri tu la presa")+'</p>' : '')+
+    myHandHTML(myTurn, leadSeed)+'</div>'+statusHTML();
+  if(myTurn) document.querySelectorAll(".card.legal[data-card]").forEach(el=>el.onclick=()=>UI.doPlay(JSON.parse(el.dataset.card)));
+}
+function renderTrickDone(){
+  const isHost = game.host_user===myUserId;
+  app.innerHTML = infoHTML()+tableHTML()+
+    '<div class="panel center"><div class="win">🏆 Presa a '+esc(nameOf(game.last_trick_winner))+'</div>'+
+    '<p class="waitmsg">'+(isHost?"":"In attesa…")+'</p></div>'+statusHTML();
+  // l'host fa avanzare automaticamente (così tutti vedono la presa)
+  const key = "trick:"+game.round_index+":"+game.trick_index;
+  if(isHost && lastAutoContinue!==key){ lastAutoContinue=key; setTimeout(()=>UI.doContinue(), 2500); }
+}
+function renderRoundEnd(){
+  const isHost = game.host_user===myUserId;
+  const rows = roundResults.slice().sort((a,b)=>a.seat-b.seat);
+  app.innerHTML =
+  '<h2 class="center">Round '+(game.round_index+1)+' finito</h2><div class="panel">'+
+  '<table class="score"><tr><th>Giocatore</th><th>Dich.</th><th>Prese</th><th>Punti</th></tr>'+
+  rows.map(r=>'<tr><td>'+esc(nameOf(r.seat))+' '+(r.declared===r.taken?'<span class="good">✓</span>':'<span class="bad">✗</span>')+
+    '</td><td>'+r.declared+'</td><td>'+r.taken+'</td><td class="'+(r.points>=0?"good":"bad")+'">'+(r.points>=0?"+":"")+r.points+'</td></tr>').join("")+
+  '</table>'+scoresHTML(-1)+
+  (isHost? '<button onclick="UI.doContinue()">'+((game.round_index+1<game.rounds.length)?"Prossimo round":"Classifica finale")+'</button>'
+         : '<p class="waitmsg">In attesa dell\'host…</p>')+'</div>';
+}
+function renderFinished(){
+  const order = players.slice().sort((a,b)=>b.score-a.score); const medals=["🥇","🥈","🥉"];
+  app.innerHTML = '<h1>Partita finita!</h1><div class="win">🏆 Vince '+esc(order[0].display_name)+' con '+order[0].score+' punti</div>'+
+  '<div class="panel"><table class="score"><tr><th>#</th><th>Giocatore</th><th>Punti</th></tr>'+
+  order.map((p,i)=>'<tr><td>'+(medals[i]||(i+1))+'</td><td>'+esc(p.display_name)+'</td><td>'+p.score+'</td></tr>').join("")+
+  '</table><button onclick="location.reload()">Nuova partita</button></div>';
+}
+</script>
+</body>
+</html>

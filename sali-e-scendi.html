@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0b6b3a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Sali e Scendi</title>
+<style>
+  :root{
+    --felt1:#0d7a42; --felt2:#075a30; --gold:#f3c64b; --ink:#10271a;
+    --card-w: 68px;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; padding:0; height:100%; }
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(circle at 50% 20%, var(--felt1), var(--felt2));
+    color:#fff; min-height:100dvh; display:flex; justify-content:center;
+  }
+  #app{ width:100%; max-width:520px; padding:14px; padding-bottom:30px; }
+  h1{ font-size:1.5rem; margin:.2em 0; text-align:center; letter-spacing:.5px; }
+  h2{ font-size:1.15rem; margin:.4em 0; }
+  .sub{ opacity:.85; font-size:.85rem; text-align:center; margin-bottom:10px; }
+  .card-btn, button{ font-family:inherit; }
+  button{
+    background:var(--gold); color:var(--ink); border:none; border-radius:14px;
+    padding:14px 18px; font-size:1.05rem; font-weight:700; cursor:pointer;
+    box-shadow:0 3px 0 #b8901f; transition:transform .05s; width:100%; margin-top:10px;
+  }
+  button:active{ transform:translateY(2px); box-shadow:0 1px 0 #b8901f; }
+  button.ghost{ background:rgba(255,255,255,.12); color:#fff; box-shadow:none; border:1px solid rgba(255,255,255,.3); }
+  button:disabled{ background:#7d7d7d; color:#ddd; box-shadow:none; cursor:not-allowed; opacity:.6; }
+  .panel{ background:rgba(0,0,0,.22); border-radius:16px; padding:14px; margin:10px 0; }
+  .row{ display:flex; gap:8px; flex-wrap:wrap; }
+  label{ display:block; font-size:.85rem; margin:8px 0 4px; opacity:.9; }
+  input[type=text]{ width:100%; padding:12px; border-radius:10px; border:none; font-size:1rem; }
+
+  /* carte */
+  .hand{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:10px 0; }
+  .card{
+    width:var(--card-w); aspect-ratio:5/8; border-radius:8px; overflow:hidden;
+    background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.5); position:relative;
+    display:flex; align-items:center; justify-content:center; padding:0; margin:0;
+    color:#222; flex:0 0 auto;
+  }
+  .card img{ width:100%; height:100%; object-fit:contain; display:block; }
+  .card .lbl{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:.7rem; font-weight:700; text-align:center; padding:4px; }
+  .hand.playable .card{ opacity:.45; filter:grayscale(.4); }
+  .hand.playable .card.legal{ opacity:1; filter:none; cursor:pointer; box-shadow:0 0 0 3px var(--gold),0 2px 8px rgba(0,0,0,.5); }
+  .hand.playable .card.legal:active{ transform:translateY(2px); }
+
+  /* tavolo */
+  .table{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; min-height:120px;
+    align-items:center; background:rgba(0,0,0,.18); border-radius:14px; padding:12px; }
+  .seat{ text-align:center; }
+  .seat .nm{ font-size:.75rem; opacity:.9; margin-bottom:4px; max-width:72px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* briscola / info */
+  .topbar{ display:flex; align-items:center; gap:10px; justify-content:space-between; flex-wrap:wrap; }
+  .briscola{ display:flex; align-items:center; gap:8px; }
+  .briscola .card{ width:46px; }
+  .pill{ background:rgba(0,0,0,.3); border-radius:999px; padding:4px 10px; font-size:.78rem; }
+  .tresette{ background:#7a3ea0; }
+
+  /* scoreboard */
+  .scores{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+  .chip{ background:rgba(255,255,255,.12); border-radius:999px; padding:6px 10px; font-size:.8rem; display:flex; gap:6px; align-items:center; }
+  .chip b{ color:var(--gold); }
+  .chip.turn{ outline:2px solid var(--gold); }
+
+  /* dichiarazioni */
+  .numgrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(48px,1fr)); gap:8px; margin-top:8px; }
+  .numgrid button{ margin:0; padding:14px 0; }
+
+  /* pass screen */
+  .pass{ text-align:center; padding-top:18vh; }
+  .pass .big{ font-size:1.4rem; margin:6px 0 2px; }
+  .pass .who{ font-size:2rem; color:var(--gold); font-weight:800; margin:6px 0 18px; }
+  .pass .eye{ font-size:3rem; }
+
+  .center{ text-align:center; }
+  .tiny{ font-size:.75rem; opacity:.8; }
+  .win{ font-size:1.3rem; color:var(--gold); font-weight:800; text-align:center; margin:10px 0; }
+  table.score{ width:100%; border-collapse:collapse; margin-top:8px; }
+  table.score td,table.score th{ padding:8px; border-bottom:1px solid rgba(255,255,255,.15); text-align:left; font-size:.9rem; }
+  table.score .pos{ font-weight:800; text-align:right; }
+  .good{ color:#7cf08a; font-weight:700; }
+  .bad{ color:#ff9b9b; font-weight:700; }
+</style>
+<style>
+/* ===================== MIGLIORIE GRAFICHE ===================== */
+:root{ --card-w:72px; }
+body{
+  background-color:#0a5e34;
+  background-image:
+    radial-gradient(140% 115% at 50% -10%, rgba(38,176,108,.55), rgba(6,64,34,0) 55%),
+    radial-gradient(125% 110% at 50% 120%, rgba(0,0,0,.6), rgba(0,0,0,0) 60%),
+    repeating-linear-gradient(45deg, rgba(255,255,255,.022) 0 2px, rgba(0,0,0,0) 2px 7px),
+    linear-gradient(160deg,#0f7e46,#063f24);
+  background-attachment:fixed;
+}
+h1{ color:#fff; letter-spacing:1px; text-shadow:0 2px 3px rgba(0,0,0,.45), 0 0 26px rgba(243,198,75,.30); }
+.sub{ opacity:.9; }
+#app>*{ animation:riseIn .32s ease both; }
+@keyframes riseIn{ from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+
+.panel{
+  background:linear-gradient(180deg, rgba(0,0,0,.30), rgba(0,0,0,.16));
+  border:1px solid rgba(255,255,255,.10); border-radius:18px;
+  box-shadow:0 12px 30px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+}
+button{
+  background:linear-gradient(180deg,#ffd969,#edae2c); color:#3a2a06;
+  font-weight:800; letter-spacing:.3px; border:1px solid rgba(255,255,255,.4);
+  box-shadow:0 4px 0 #b8861d, 0 9px 18px rgba(0,0,0,.28);
+}
+button:active{ transform:translateY(3px); box-shadow:0 1px 0 #b8861d, 0 4px 10px rgba(0,0,0,.22); }
+button.ghost{ background:linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.06)); color:#fff; border:1px solid rgba(255,255,255,.3); box-shadow:0 5px 14px rgba(0,0,0,.22); }
+button:disabled{ background:#6f6f6f; color:#d2d2d2; box-shadow:none; border-color:rgba(255,255,255,.15); }
+
+.card{
+  border-radius:11px; background:linear-gradient(180deg,#fff,#eef0ea);
+  border:1px solid rgba(0,0,0,.18); box-shadow:0 5px 12px rgba(0,0,0,.45);
+  transition:transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+.card img{ padding:3px; }
+.hand .card{ animation:dealIn .34s cubic-bezier(.2,.85,.25,1) both; }
+.hand .card:nth-child(2){animation-delay:.04s}.hand .card:nth-child(3){animation-delay:.08s}
+.hand .card:nth-child(4){animation-delay:.12s}.hand .card:nth-child(5){animation-delay:.16s}
+.hand .card:nth-child(6){animation-delay:.20s}.hand .card:nth-child(7){animation-delay:.24s}
+.hand .card:nth-child(8){animation-delay:.28s}.hand .card:nth-child(9){animation-delay:.32s}
+.hand .card:nth-child(n+10){animation-delay:.36s}
+@keyframes dealIn{ from{opacity:0; transform:translateY(14px) scale(.9)} to{opacity:1; transform:none} }
+.hand.playable .card{ opacity:.5; filter:grayscale(.55) brightness(.9); }
+.hand.playable .card.legal{
+  opacity:1; filter:none; transform:translateY(-7px);
+  box-shadow:0 0 0 3px var(--gold), 0 12px 20px rgba(0,0,0,.45);
+  animation:legalPulse 1.7s ease-in-out infinite;
+}
+@keyframes legalPulse{ 0%,100%{box-shadow:0 0 0 3px rgba(243,198,75,.9),0 12px 20px rgba(0,0,0,.4)} 50%{box-shadow:0 0 0 6px rgba(243,198,75,.5),0 14px 24px rgba(0,0,0,.5)} }
+@media(hover:hover){ .hand.playable .card.legal:hover{ transform:translateY(-13px) scale(1.05); } }
+
+.table{
+  background:radial-gradient(circle at 50% 38%, rgba(255,255,255,.07), rgba(0,0,0,.24));
+  border:1.5px dashed rgba(243,198,75,.4); border-radius:18px;
+  box-shadow:inset 0 6px 22px rgba(0,0,0,.4);
+}
+.seat .card{ animation:dropIn .3s ease both; }
+@keyframes dropIn{ from{opacity:0; transform:translateY(-18px) rotate(-5deg)} to{opacity:1; transform:none} }
+
+.pill{ background:rgba(0,0,0,.36); border:1px solid rgba(255,255,255,.10); }
+.pill.tresette, .tresette{ background:linear-gradient(180deg,#9a5bc4,#6c33a0); border:1px solid rgba(255,255,255,.18); }
+.briscola .card{ transform:rotate(6deg); }
+
+.chip{ background:linear-gradient(180deg, rgba(255,255,255,.17), rgba(255,255,255,.07)); border:1px solid rgba(255,255,255,.14); box-shadow:0 2px 6px rgba(0,0,0,.18); }
+.chip.turn{ outline:2px solid var(--gold); box-shadow:0 0 14px rgba(243,198,75,.55); }
+.numgrid button{ box-shadow:0 3px 0 #b8861d, 0 6px 12px rgba(0,0,0,.22); }
+
+.win{ text-shadow:0 0 20px rgba(243,198,75,.6); animation:popWin .45s cubic-bezier(.2,1.5,.4,1) both; }
+@keyframes popWin{ from{opacity:0; transform:scale(.7)} to{opacity:1; transform:scale(1)} }
+table.score tr:hover td{ background:rgba(255,255,255,.04); }
+input{ box-shadow:inset 0 2px 6px rgba(0,0,0,.15); }
+
+/* schermata "passa il telefono": dorso di carta disegnato in CSS */
+.pass .eye{ display:none; }
+.pass::before{
+  content:""; display:block; width:96px; height:144px; margin:6px auto 16px;
+  border-radius:13px; border:3px solid #f3c64b;
+  background:
+    repeating-linear-gradient(45deg, rgba(243,198,75,.30) 0 7px, transparent 7px 14px),
+    repeating-linear-gradient(-45deg, rgba(243,198,75,.30) 0 7px, transparent 7px 14px),
+    radial-gradient(circle at 50% 50%, rgba(255,255,255,.12), transparent 60%),
+    linear-gradient(160deg,#11407f,#0a2a5c);
+  box-shadow:0 10px 24px rgba(0,0,0,.5), inset 0 0 0 2px rgba(255,255,255,.12);
+  animation:floaty 2.6s ease-in-out infinite;
+}
+@keyframes floaty{ 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-6px) rotate(2deg)} }
+.pass .who{ text-shadow:0 0 18px rgba(243,198,75,.45); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ============================================================
+   MOTORE DI GIOCO (verificato con 36 test + 600 partite simulate)
+   ============================================================ */
+const SEEDS = ['cups','gold','swords','sticks'];
+const RANKS = ['Ace','2','3','4','5','6','7','Jack','Horse','King'];
+const HIER_BRISCOLA = ['Ace','3','King','Horse','Jack','7','6','5','4','2'];
+const HIER_TRESETTE = ['3','2','Ace','King','Horse','Jack','7','6','5','4'];
+const SEED_IT = { cups:'Coppe', gold:'Denari', swords:'Spade', sticks:'Bastoni' };
+const RANK_IT = { Ace:'Asso','2':'2','3':'3','4':'4','5':'5','6':'6','7':'7', Jack:'Fante', Horse:'Cavallo', King:'Re' };
+
+function createDeck(){ const d=[]; for(const s of SEEDS) for(const r of RANKS) d.push({seed:s,rank:r}); return d; }
+function shuffle(deck){ const d=deck.slice(); for(let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=d[i]; d[i]=d[j]; d[j]=t; } return d; }
+function maxCardsFor(n){ return Math.floor(40/n); }
+function roundsSequence(m){ const s=[]; for(let i=1;i<=m;i++)s.push(i); for(let i=m;i>=1;i--)s.push(i); return s; }
+function cardStrength(rank,h){ const i=h.indexOf(rank); return i===-1?h.length:i; }
+function playOrder(n,first){ const o=[]; for(let i=0;i<n;i++)o.push((first+i)%n); return o; }
+function dealerFor(n,r){ return r%n; }
+function firstPlayerFor(n,r){ return (dealerFor(n,r)+1)%n; }
+function sortHand(hand,h){ return hand.slice().sort(function(a,b){ return a.seed!==b.seed ? SEEDS.indexOf(a.seed)-SEEDS.indexOf(b.seed) : cardStrength(a.rank,h)-cardStrength(b.rank,h); }); }
+function dealRound(n,nCards,first){
+  const isNoTrump = nCards>=maxCardsFor(n);
+  const deck = shuffle(createDeck());
+  const hierarchy = isNoTrump?HIER_TRESETTE:HIER_BRISCOLA;
+  let briscola=null; if(!isNoTrump) briscola=deck.pop();
+  const order = playOrder(n,first);
+  const hands = new Array(n); for(const p of order) hands[p]=[];
+  for(let c=0;c<nCards;c++) for(const p of order) hands[p].push(deck.pop());
+  for(const p of order) hands[p]=sortHand(hands[p],hierarchy);
+  return { hands:hands, briscola:briscola, hierarchy:hierarchy, isNoTrump:isNoTrump, order:order };
+}
+function legalCards(hand,leadSeed){ if(!leadSeed) return hand.slice(); const s=hand.filter(function(c){return c.seed===leadSeed;}); return s.length?s:hand.slice(); }
+function resolveTrick(plays,briscolaSeed,h){
+  const lead=plays[0].card.seed; let best=null;
+  for(const p of plays){ const seed=p.card.seed, rank=p.card.rank;
+    const isB = briscolaSeed!=null && seed===briscolaSeed; const isL = seed===lead;
+    if(!isB && !isL) continue; const st=cardStrength(rank,h);
+    if(best===null){ best={player:p.player,isB:isB,st:st}; continue; }
+    if(isB && !best.isB){ best={player:p.player,isB:isB,st:st}; continue; }
+    if(isB===best.isB && st<best.st){ best={player:p.player,isB:isB,st:st}; }
+  }
+  return best.player;
+}
+function scoreRound(decl,taken){ return decl===taken ? 1+taken : -Math.abs(decl-taken); }
+function forbiddenLastDeclare(others,nCards){ const sum=others.reduce(function(a,b){return a+b;},0); const f=nCards-sum; return (f>=0&&f<=nCards)?f:null; }
+
+/* ============================================================
+   STATO DI GIOCO
+   ============================================================ */
+let G = null;
+function newGame(){ return { phase:'setup', names:[], n:4, scores:[], rounds:[], roundIndex:0 }; }
+
+function startGame(names){
+  const n = names.length;
+  G = {
+    phase:'pass', names:names, n:n,
+    scores: names.map(function(){return 0;}),
+    rounds: roundsSequence(maxCardsFor(n)),
+    roundIndex:0
+  };
+  startRound();
+}
+
+function startRound(){
+  const r = G.roundIndex;
+  const nCards = G.rounds[r];
+  const first = firstPlayerFor(G.n, r);
+  const d = dealRound(G.n, nCards, first);
+  G.nCards = nCards;
+  G.dealer = dealerFor(G.n, r);
+  G.firstPlayer = first;
+  G.hands = d.hands;
+  G.briscola = d.briscola;
+  G.hierarchy = d.hierarchy;
+  G.isNoTrump = d.isNoTrump;
+  G.order = d.order;
+  G.declares = G.names.map(function(){return null;});
+  G.taken = G.names.map(function(){return 0;});
+  G.declPos = 0;
+  G.tricksDone = 0;
+  G.trickPlays = [];
+  G.trickLeader = first;
+  G.turnOrder = playOrder(G.n, first);
+  G.turnPos = 0;
+  G.stage = 'declare';
+  G.phase = 'pass';
+  G.passTo = G.order[0];
+  render();
+}
+
+function revealHand(){
+  G.phase = (G.stage==='declare') ? 'declare' : 'play';
+  render();
+}
+
+function submitDeclare(value){
+  const player = G.order[G.declPos];
+  G.declares[player] = value;
+  G.declPos++;
+  if(G.declPos < G.n){
+    G.passTo = G.order[G.declPos];
+    G.phase = 'pass';
+  } else {
+    G.stage = 'play';
+    G.turnOrder = playOrder(G.n, G.trickLeader);
+    G.turnPos = 0;
+    G.passTo = G.turnOrder[0];
+    G.phase = 'pass';
+  }
+  render();
+}
+
+function playCard(cardIndex){
+  const player = G.turnOrder[G.turnPos];
+  const hand = G.hands[player];
+  const leadSeed = G.trickPlays.length ? G.trickPlays[0].card.seed : null;
+  const legal = legalCards(hand, leadSeed);
+  const card = hand[cardIndex];
+  if(!card) return;
+  if(!legal.some(function(c){return c.seed===card.seed && c.rank===card.rank;})) return;
+  hand.splice(cardIndex,1);
+  G.trickPlays.push({player:player, card:card});
+  G.turnPos++;
+  if(G.turnPos < G.n){
+    G.passTo = G.turnOrder[G.turnPos];
+    G.phase = 'pass';
+    render();
+  } else {
+    const briscolaSeed = G.briscola ? G.briscola.seed : null;
+    const winner = resolveTrick(G.trickPlays, briscolaSeed, G.hierarchy);
+    G.taken[winner]++;
+    G.lastTrickWinner = winner;
+    G.phase = 'trick';
+    render();
+  }
+}
+
+function nextTrick(){
+  G.tricksDone++;
+  if(G.tricksDone < G.nCards){
+    G.trickLeader = G.lastTrickWinner;
+    G.turnOrder = playOrder(G.n, G.trickLeader);
+    G.turnPos = 0;
+    G.trickPlays = [];
+    G.passTo = G.turnOrder[0];
+    G.phase = 'pass';
+    render();
+  } else {
+    G.roundPoints = G.names.map(function(_,p){ return scoreRound(G.declares[p], G.taken[p]); });
+    G.roundPoints.forEach(function(pt,p){ G.scores[p]+=pt; });
+    G.phase = 'roundresult';
+    render();
+  }
+}
+
+function nextRound(){
+  G.roundIndex++;
+  if(G.roundIndex < G.rounds.length){ startRound(); }
+  else { G.phase='gameover'; render(); }
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const app = document.getElementById('app');
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+function cardHTML(card, opts){
+  opts = opts || {};
+  const file = 'cards/'+card.seed+'_'+card.rank+'.png';
+  const cls = ['card']; if(opts.legal) cls.push('legal');
+  const idx = (opts.index!=null) ? ' data-i="'+opts.index+'"' : '';
+  const onclick = opts.legal ? ' onclick="UI.play('+opts.index+')"' : '';
+  return '<div class="'+cls.join(' ')+'"'+idx+onclick+'>'+
+    '<img src="'+esc(file)+'" alt="'+esc(RANK_IT[card.rank]+' di '+SEED_IT[card.seed])+'" '+
+    'onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';">'+
+    '<span class="lbl" style="display:none">'+esc(RANK_IT[card.rank])+'<br>'+esc(SEED_IT[card.seed])+'</span>'+
+  '</div>';
+}
+
+function scoreboardHTML(turnPlayer){
+  return '<div class="scores">' + G.names.map(function(nm,p){
+    const t = (p===turnPlayer)?' turn':'';
+    return '<span class="chip'+t+'">'+esc(nm)+' <b>'+G.scores[p]+'</b></span>';
+  }).join('') + '</div>';
+}
+
+function roundInfoHTML(){
+  const tot = G.rounds.length;
+  const briscBox = G.isNoTrump
+    ? '<span class="pill tresette">TRESETTE · niente briscola</span>'
+    : (G.briscola ? '<div class="briscola"><span class="tiny">Briscola</span>'+cardHTML(G.briscola)+'<span class="tiny">'+esc(SEED_IT[G.briscola.seed])+'</span></div>' : '');
+  return '<div class="topbar">'+
+    '<span class="pill">Round '+(G.roundIndex+1)+'/'+tot+' · '+G.nCards+' carte</span>'+
+    briscBox+
+  '</div>';
+}
+
+function declStatusHTML(){
+  const rows = G.order.map(function(p){
+    const dc = G.declares[p]==null?'–':G.declares[p];
+    return '<span class="chip">'+esc(G.names[p])+' · dich <b>'+dc+'</b> · prese <b>'+G.taken[p]+'</b></span>';
+  }).join('');
+  return '<div class="scores" style="margin-top:8px">'+rows+'</div>';
+}
+
+function tableHTML(){
+  if(!G.trickPlays.length) return '<div class="table"><span class="tiny">Tavolo vuoto — tocca a chi apre</span></div>';
+  return '<div class="table">' + G.trickPlays.map(function(pl){
+    return '<div class="seat"><div class="nm">'+esc(G.names[pl.player])+'</div>'+cardHTML(pl.card)+'</div>';
+  }).join('') + '</div>';
+}
+
+function render(){
+  if(!G || G.phase==='setup'){ return renderSetup(); }
+  switch(G.phase){
+    case 'pass': return renderPass();
+    case 'declare': return renderDeclare();
+    case 'play': return renderPlay();
+    case 'trick': return renderTrick();
+    case 'roundresult': return renderRoundResult();
+    case 'gameover': return renderGameOver();
+  }
+}
+
+function renderSetup(){
+  const n = (G&&G.n)||4;
+  app.innerHTML =
+  '<h1>🂡 Sali e Scendi</h1>'+
+  '<p class="sub">Prototipo per giocare in tanti su un solo telefono (pass‑and‑play)</p>'+
+  '<div class="panel">'+
+    '<label>Quanti giocatori?</label>'+
+    '<div class="row">'+
+      '<button class="'+(n===4?'':'ghost')+'" style="flex:1" onclick="UI.setN(4)">4 giocatori</button>'+
+      '<button class="'+(n===5?'':'ghost')+'" style="flex:1" onclick="UI.setN(5)">5 giocatori</button>'+
+    '</div>'+
+    '<div id="names"></div>'+
+    '<button onclick="UI.begin()">Inizia partita</button>'+
+  '</div>'+
+  '<p class="tiny center">Carte massime al picco: '+maxCardsFor(n)+' · '+roundsSequence(maxCardsFor(n)).length+' round totali</p>';
+  renderNameInputs(n);
+}
+function renderNameInputs(n){
+  const cont = document.getElementById('names');
+  let html = '';
+  for(let i=0;i<n;i++){
+    const v = (G&&G.names&&G.names[i])?esc(G.names[i]):'';
+    html += '<label>Nome giocatore '+(i+1)+'</label><input type="text" id="nm'+i+'" value="'+v+'" placeholder="Giocatore '+(i+1)+'" maxlength="14">';
+  }
+  cont.innerHTML = html;
+}
+
+function renderPass(){
+  app.innerHTML =
+  '<div class="pass">'+
+    '<div class="eye">🙈</div>'+
+    '<div class="big">Passa il telefono a</div>'+
+    '<div class="who">'+esc(G.names[G.passTo])+'</div>'+
+    '<p class="tiny">Gli altri non devono vedere le carte!</p>'+
+    '<button onclick="UI.reveal()">Sono '+esc(G.names[G.passTo])+', mostra le mie carte</button>'+
+  '</div>';
+}
+
+function renderDeclare(){
+  const player = G.order[G.declPos];
+  const hand = G.hands[player];
+  const isLast = (G.declPos === G.n-1);
+  let forbidden = null;
+  if(isLast){
+    const others = G.order.slice(0,G.n-1).map(function(p){return G.declares[p];});
+    forbidden = forbiddenLastDeclare(others, G.nCards);
+  }
+  let btns='';
+  for(let v=0; v<=G.nCards; v++){
+    const dis = (isLast && v===forbidden);
+    btns += '<button '+(dis?'disabled':'')+' onclick="UI.declare('+v+')">'+v+'</button>';
+  }
+  app.innerHTML =
+  roundInfoHTML()+
+  scoreboardHTML(player)+
+  '<div class="panel">'+
+    '<h2>'+esc(G.names[player])+': quante prese fai?</h2>'+
+    '<div class="hand">'+hand.map(function(c){return cardHTML(c);}).join('')+'</div>'+
+    (isLast && forbidden!=null ? '<p class="tiny center">⚠️ Sei l\'ultimo: non puoi dichiarare <b>'+forbidden+'</b> (la somma non può fare '+G.nCards+').</p>':'')+
+    '<div class="numgrid">'+btns+'</div>'+
+  '</div>'+
+  declStatusHTML();
+}
+
+function renderPlay(){
+  const player = G.turnOrder[G.turnPos];
+  const hand = G.hands[player];
+  const leadSeed = G.trickPlays.length ? G.trickPlays[0].card.seed : null;
+  const legal = legalCards(hand, leadSeed);
+  const legalKey = {}; legal.forEach(function(c){ legalKey[c.seed+'_'+c.rank]=true; });
+  const handHTML = hand.map(function(c,i){ return cardHTML(c, { legal: !!legalKey[c.seed+'_'+c.rank], index:i }); }).join('');
+  app.innerHTML =
+  roundInfoHTML()+
+  scoreboardHTML(player)+
+  tableHTML()+
+  '<div class="panel">'+
+    '<h2>Gioca, '+esc(G.names[player])+'</h2>'+
+    '<p class="tiny">'+(leadSeed ? 'Seme di uscita: <b>'+esc(SEED_IT[leadSeed])+'</b> — devi rispondere se puoi.' : 'Apri tu la presa: gioca la carta che vuoi.')+'</p>'+
+    '<div class="hand playable">'+handHTML+'</div>'+
+  '</div>'+
+  declStatusHTML();
+}
+
+function renderTrick(){
+  const w = G.lastTrickWinner;
+  const label = (G.tricksDone+1 < G.nCards) ? 'Prossima presa' : 'Fine round';
+  app.innerHTML =
+  roundInfoHTML()+
+  tableHTML()+
+  '<div class="panel center">'+
+    '<div class="win">🏆 Presa a '+esc(G.names[w])+'</div>'+
+    '<p class="tiny">Prese di '+esc(G.names[w])+' in questo round: '+G.taken[w]+'</p>'+
+    '<button onclick="UI.nextTrick()">'+label+'</button>'+
+  '</div>'+
+  declStatusHTML();
+}
+
+function renderRoundResult(){
+  const rows = G.names.map(function(nm,p){
+    const ok = G.declares[p]===G.taken[p];
+    return { nm:nm, decl:G.declares[p], taken:G.taken[p], ok:ok, pt:G.roundPoints[p], tot:G.scores[p] };
+  });
+  const last = (G.roundIndex+1 >= G.rounds.length);
+  app.innerHTML =
+  '<h2 class="center">Round '+(G.roundIndex+1)+' finito</h2>'+
+  '<div class="panel">'+
+    '<table class="score">'+
+      '<tr><th>Giocatore</th><th>Dich.</th><th>Prese</th><th>Punti</th><th>Totale</th></tr>'+
+      rows.map(function(r){ return '<tr>'+
+        '<td>'+esc(r.nm)+' '+(r.ok?'<span class="good">✓</span>':'<span class="bad">✗</span>')+'</td>'+
+        '<td>'+r.decl+'</td><td>'+r.taken+'</td>'+
+        '<td class="'+(r.pt>=0?'good':'bad')+'">'+(r.pt>=0?'+':'')+r.pt+'</td>'+
+        '<td><b>'+r.tot+'</b></td>'+
+      '</tr>'; }).join('')+
+    '</table>'+
+    '<button onclick="UI.nextRound()">'+(last?'Vedi classifica finale':'Prossimo round')+'</button>'+
+  '</div>';
+}
+
+function renderGameOver(){
+  const order = G.names.map(function(nm,p){return {nm:nm,score:G.scores[p]};}).sort(function(a,b){return b.score-a.score;});
+  const medals=['🥇','🥈','🥉'];
+  app.innerHTML =
+  '<h1>Partita finita!</h1>'+
+  '<div class="win">🏆 Vince '+esc(order[0].nm)+' con '+order[0].score+' punti</div>'+
+  '<div class="panel">'+
+    '<table class="score">'+
+      '<tr><th>#</th><th>Giocatore</th><th class="pos">Punti</th></tr>'+
+      order.map(function(r,i){ return '<tr><td>'+(medals[i]||(i+1))+'</td><td>'+esc(r.nm)+'</td><td class="pos">'+r.score+'</td></tr>'; }).join('')+
+    '</table>'+
+    '<button onclick="UI.restart()">Nuova partita</button>'+
+  '</div>';
+}
+
+/* ============================================================
+   UI handlers (globali per gli onclick)
+   ============================================================ */
+function saveNames(){
+  if(!G) return;
+  const arr=[];
+  for(let i=0;i<G.n;i++){ const el=document.getElementById('nm'+i); if(el) arr[i]=el.value; }
+  if(arr.length) G.names=arr.map(function(x){return x||'';});
+}
+const UI = {
+  setN: function(n){ if(!G) G=newGame(); saveNames(); G.n=n; if(G.names.length>n) G.names=G.names.slice(0,n); renderSetup(); },
+  begin: function(){
+    saveNames();
+    const names=[];
+    for(let i=0;i<G.n;i++){ const el=document.getElementById('nm'+i); let v=el?el.value.trim():''; if(!v) v='Giocatore '+(i+1); names.push(v); }
+    startGame(names);
+  },
+  reveal: function(){ revealHand(); },
+  declare: function(v){ submitDeclare(v); },
+  play: function(i){ playCard(i); },
+  nextTrick: function(){ nextTrick(); },
+  nextRound: function(){ nextRound(); },
+  restart: function(){ G=newGame(); renderSetup(); }
+};
+window.UI = UI;
+
+// avvio
+G = newGame();
+renderSetup();
+</script>
+</body>
+</html>
