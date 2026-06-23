@@ -12,10 +12,12 @@
 //   - continue    { gameId }   (avanza dopo presa conclusa / fine round)
 //   - timeout     { gameId }   (chiunque: se il timer del turno e' scaduto,
 //                               il server gioca/dichiara in automatico)
+//   - send_message{ gameId, body }            (membro: invia un messaggio di chat)
 // ============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as E from "../_shared/engine.ts";
+import * as H from "../_shared/history.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -68,6 +70,7 @@ Deno.serve(async (req) => {
       case "play_card":     return await playCard(db, user.id, body);
       case "continue":      return await continueAfter(db, user.id, body);
       case "timeout":       return await timeoutAction(db, user.id, body);
+      case "send_message":  return await sendMessage(db, user.id, body);
       default:              return json({ error: "Azione sconosciuta: " + action }, 400);
     }
   } catch (e) {
@@ -229,6 +232,11 @@ async function continueAfter(db: any, userId: string, body: any) {
       await db.from("games").update({
         phase: "finished", status: "finished", winner_seat: winnerSeat, turn_deadline: null,
       }).eq("id", game.id);
+
+      // --- HISTORY: finalizza partita (games + players) — best-effort ---
+      await H.logGameFinished(db, game.id, winnerSeat, (players ?? []).map((p: any) => ({
+        seat: p.seat, user_id: p.user_id, display_name: p.display_name, score: p.score,
+      })));
     }
     return json({ ok: true });
   }
@@ -276,12 +284,44 @@ async function timeoutAction(db: any, userId: string, body: any) {
   return json({ ok: true, auto: "play", seat, card, ...res });
 }
 
+// Invia un messaggio di chat nella stanza. Solo i membri possono scrivere.
+// Validazioni: non vuoto, max 300 caratteri, anti-spam (>=1s dall'ultimo proprio msg).
+async function sendMessage(db: any, userId: string, body: any) {
+  const { game, me } = await loadGameAndPlayer(db, body.gameId, userId);
+  if (!game) return json({ error: "Partita non trovata" }, 404);
+  if (!me) return json({ error: "Non sei in questa partita" }, 403);
+
+  let text = String(body.body ?? "").trim();
+  if (!text) return json({ error: "Messaggio vuoto" }, 400);
+  if (text.length > 300) text = text.slice(0, 300);
+
+  // anti-spam: rifiuta se l'ultimo messaggio di questo utente e' < 1000ms fa
+  const { data: last } = await db.from("chat_messages")
+    .select("created_at").eq("game_id", game.id).eq("user_id", userId)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (last && Date.now() - new Date(last.created_at).getTime() < 1000)
+    return json({ error: "Aspetta un attimo prima di riscrivere" }, 400);
+
+  const { error } = await db.from("chat_messages").insert({
+    game_id: game.id,
+    user_id: userId,
+    seat: me.seat,
+    display_name: me.display_name,
+    body: text,
+  });
+  if (error) return json({ error: error.message }, 400);
+  return json({ ok: true });
+}
+
 // ---------------- HELPERS DI MUTAZIONE ----------------
 
 // Registra la dichiarazione di `seat`, poi avanza il turno o apre il gioco.
 async function applyDeclare(db: any, game: any, seat: number, value: number, isLast: boolean, n: number) {
   await db.from("game_players").update({ declared: value })
     .eq("game_id", game.id).eq("seat", seat);
+
+  // --- HISTORY: log dichiarazione (azione + stato visto) — best-effort ---
+  await H.logDeclaration(db, game, seat, value, isLast, n);
 
   if (isLast) {
     // tutte fatte -> si gioca; apre il primo (trick_lead_seat)
@@ -302,11 +342,16 @@ async function applyDeclare(db: any, game: any, seat: number, value: number, isL
 async function applyPlay(db: any, game: any, seat: number, card: E.Card, hand: E.Card[]) {
   const idx = hand.findIndex((c) => c.seed === card.seed && c.rank === card.rank);
   if (idx < 0) return { error: "carta-non-in-mano" };
+  const handBefore = hand.slice();              // mano PRIMA di rimuovere la carta
   hand.splice(idx, 1);
   await db.from("hands").update({ cards: hand })
     .eq("game_id", game.id).eq("round_index", game.round_index).eq("seat", seat);
 
   const plays = (game.trick_plays ?? []) as E.Play[];
+
+  // --- HISTORY: log carta giocata (azione + stato + mosse legali) — best-effort ---
+  await H.logPlay(db, game, seat, card, handBefore, plays);
+
   const newPlays = [...plays, { seat, card }];
   const n = game.num_players;
 
@@ -326,6 +371,9 @@ async function applyPlay(db: any, game: any, seat: number, card: E.Card, hand: E
   const winnerTaken = await taken(db, game.id, winner);
   await db.from("game_players").update({ taken: winnerTaken + 1 })
     .eq("game_id", game.id).eq("seat", winner);
+
+  // --- HISTORY: log presa chiusa (tricks + won_trick) — best-effort ---
+  await H.logTrickResolved(db, game, game.trick_index, newPlays, winner);
 
   await db.from("games").update({
     trick_plays: newPlays, phase: "trick_done",
@@ -377,6 +425,9 @@ async function dealRoundDB(db: any, gameId: string, n: number, rounds: number[],
   }));
   await db.from("hands").upsert(handRows, { onConflict: "game_id,round_index,seat" });
 
+  // --- HISTORY: log inizio round (rounds + deals) — best-effort ---
+  await H.logRoundStart(db, gameId, n, roundIndex, nCards, firstSeat, d, players ?? []);
+
   // reset dichiarazioni/prese
   await db.from("game_players").update({ declared: null, taken: 0 }).eq("game_id", gameId);
 
@@ -392,13 +443,22 @@ async function dealRoundDB(db: any, gameId: string, n: number, rounds: number[],
 async function scoreRoundDB(db: any, game: any) {
   const { data: players } = await db.from("game_players")
     .select("*").eq("game_id", game.id).order("seat");
+  const outcomeRows: any[] = [];
   for (const p of players) {
     const pts = E.scoreRound(p.declared ?? 0, p.taken);
-    await db.from("game_players").update({ score: p.score + pts })
+    const scoreAfter = p.score + pts;
+    await db.from("game_players").update({ score: scoreAfter })
       .eq("game_id", game.id).eq("seat", p.seat);
     await db.from("round_results").insert({
       game_id: game.id, round_index: game.round_index, seat: p.seat,
       declared: p.declared ?? 0, taken: p.taken, points: pts,
     });
+    outcomeRows.push({
+      seat: p.seat, user_id: p.user_id, declared: p.declared ?? 0,
+      taken: p.taken, points: pts, scoreAfter,
+    });
   }
+
+  // --- HISTORY: log esiti di fine round — best-effort ---
+  await H.logRoundOutcomes(db, game, outcomeRows);
 }
