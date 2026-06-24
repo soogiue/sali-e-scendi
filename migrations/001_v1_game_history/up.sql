@@ -211,6 +211,7 @@ create index if not exists idx_hist_games_finished_at  on history.games(finished
 create index if not exists idx_hist_players_game       on history.players(game_log_id);
 create index if not exists idx_hist_players_user       on history.players(user_id);
 create index if not exists idx_hist_rounds_game        on history.rounds(game_log_id, round_index);
+create index if not exists idx_hist_rounds_gameid      on history.rounds(game_id, round_index);
 create index if not exists idx_hist_deals_round        on history.deals(round_log_id);
 create index if not exists idx_hist_decl_round         on history.declarations(round_log_id);
 create index if not exists idx_hist_plays_round        on history.plays(round_log_id, trick_index, play_order);
@@ -231,6 +232,19 @@ alter table history.declarations   enable row level security;
 alter table history.plays          enable row level security;
 alter table history.tricks         enable row level security;
 alter table history.round_outcomes enable row level security;
+
+-- ------------------------------------------------------------
+-- GRANT: solo la service_role (Edge Function) accede allo schema history.
+-- NON concediamo nulla ad anon/authenticated: la cronologia resta off-limits
+-- ai client (e comunque la RLS è attiva senza policy di SELECT).
+-- NB: per usare history via supabase-js/PostgREST va aggiunto 'history' agli
+--     "Exposed schemas" (Dashboard → Project Settings → API). Vedi notes.md.
+-- ------------------------------------------------------------
+grant usage on schema history to service_role;
+grant all privileges on all tables in schema history to service_role;
+grant all privileges on all sequences in schema history to service_role;
+alter default privileges in schema history grant all on tables to service_role;
+alter default privileges in schema history grant all on sequences to service_role;
 
 -- ============================================================
 -- STEP 4: VISTE COMODE PER L'ESTRAZIONE DEL DATASET ML
@@ -304,6 +318,9 @@ join history.rounds r on r.id = d.round_log_id
 join history.games  g on g.id = r.game_log_id
 left join history.round_outcomes o
        on o.round_log_id = d.round_log_id and o.seat = d.seat;
+
+grant select on history.ml_play_samples        to service_role;
+grant select on history.ml_declaration_samples to service_role;
 
 -- ============================================================
 -- STEP 5: LOG DELLA MIGRATION

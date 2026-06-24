@@ -68,15 +68,29 @@ schema classico per imitation learning / RL offline.
 1. Apri il **SQL Editor** di Supabase del progetto sali-e-scendi.
 2. Incolla ed esegui tutto `up.sql`.
 3. Verifica che le query finali elenchino le 8 tabelle e le 2 viste in `history`.
-4. Aggiorna `applied_at`/`status` in `metadata.json` e la riga in `MIGRATION_LOG.md`.
+4. **Esponi lo schema a PostgREST** (necessario perché l'Edge Function ci scriva
+   via supabase-js): Dashboard → **Project Settings → API → Exposed schemas** →
+   aggiungi `history` alla lista (accanto a `public`, `graphql_public`) e salva.
+   La cronologia resta comunque off-limits ai client: la RLS è attiva senza
+   policy e i GRANT sono solo per `service_role`.
+5. (Ri)fai il deploy della Edge Function `game` (vedi sotto).
+6. Aggiorna `applied_at`/`status` in `metadata.json` e la riga in `MIGRATION_LOG.md`.
 
-## Passo successivo (non in questa migration)
+## Edge Function — collegata in questo passo ✅
 
-Collegare la Edge Function (`supabase/functions/game/index.ts`) perché, durante la
-partita, scriva su queste tabelle: a inizio round → `rounds` + `deals`; alla
-dichiarazione → `declarations`; a ogni carta → `plays`; a presa chiusa →
-`tricks` (+ `won_trick`); a fine round → `round_outcomes`; a fine partita →
-`games` + `players`.
+La Edge Function (`supabase/functions/game/index.ts`) ora popola le tabelle
+`history` tramite un modulo dedicato `supabase/functions/_shared/history.ts`
+(logging **best-effort**: ogni scrittura è in try/catch e non interrompe mai la
+partita). Punti di aggancio:
+
+- inizio round (`dealRoundDB`) → `history.rounds` + `history.deals` (mani distribuite)
+- dichiarazione (`applyDeclare`) → `history.declarations` (con mano vista, dichiarazioni precedenti, valore vietato)
+- carta giocata (`applyPlay`) → `history.plays` (mano prima, mosse legali, tavolo)
+- presa chiusa (`applyPlay`) → `history.tricks` + aggiorna `plays.won_trick`
+- fine round (`scoreRoundDB`) → `history.round_outcomes`
+- fine partita (`continueAfter`) → finalizza `history.games` + `history.players`
+
+Deploy: `supabase functions deploy game` (richiede `history` negli Exposed schemas).
 
 ## Checklist test manuale
 
