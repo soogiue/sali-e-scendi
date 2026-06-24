@@ -1,0 +1,6 @@
+# artefatti generati
+models/
+data/
+__pycache__/
+*.joblib
+*.csv

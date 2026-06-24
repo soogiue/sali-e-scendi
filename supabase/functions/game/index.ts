@@ -13,6 +13,7 @@
 //   - timeout     { gameId }   (chiunque: se il timer del turno e' scaduto,
 //                               il server gioca/dichiara in automatico)
 //   - send_message{ gameId, body }            (membro: invia un messaggio di chat)
+//   - set_bots    { gameId, count }            (host/lobby: imposta quanti bot)
 // ============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -71,6 +72,7 @@ Deno.serve(async (req) => {
       case "continue":      return await continueAfter(db, user.id, body);
       case "timeout":       return await timeoutAction(db, user.id, body);
       case "send_message":  return await sendMessage(db, user.id, body);
+      case "set_bots":      return await setBots(db, user.id, body);
       default:              return json({ error: "Azione sconosciuta: " + action }, 400);
     }
   } catch (e) {
@@ -148,6 +150,7 @@ async function startGame(db: any, userId: string, body: any) {
   }).eq("id", game.id);
 
   await dealRoundDB(db, game.id, n, rounds, 0);
+  await advanceBots(db, game.id);
   return json({ ok: true });
 }
 
@@ -174,6 +177,7 @@ async function declare(db: any, userId: string, body: any) {
   }
 
   await applyDeclare(db, game, me.seat, value, isLast, n);
+  await advanceBots(db, game.id);
   return json({ ok: true });
 }
 
@@ -195,6 +199,7 @@ async function playCard(db: any, userId: string, body: any) {
     return json({ error: "Mossa non valida: devi rispondere al seme se puoi" }, 400);
 
   const res = await applyPlay(db, game, me.seat, card, hand);
+  await advanceBots(db, game.id);
   return json({ ok: true, ...res });
 }
 
@@ -212,6 +217,7 @@ async function continueAfter(db: any, userId: string, body: any) {
         current_turn_seat: game.last_trick_winner, trick_plays: [],
         turn_deadline: nextDeadline(),
       }).eq("id", game.id);
+      await advanceBots(db, game.id);
       return json({ ok: true });
     }
     // fine round -> punteggi
@@ -224,6 +230,7 @@ async function continueAfter(db: any, userId: string, body: any) {
     const nextRound = game.round_index + 1;
     if (nextRound < game.rounds.length) {
       await dealRoundDB(db, game.id, n, game.rounds, nextRound);
+      await advanceBots(db, game.id);
     } else {
       // fine partita
       const { data: players } = await db.from("game_players")
@@ -270,6 +277,7 @@ async function timeoutAction(db: any, userId: string, body: any) {
     const others = players.filter((p: any) => p.declared !== null).map((p: any) => p.declared);
     const value = E.autoPickDeclare(others, game.n_cards, isLast);
     await applyDeclare(db, game, seat, value, isLast, n);
+    await advanceBots(db, game.id);
     return json({ ok: true, auto: "declare", seat, value });
   }
 
@@ -281,6 +289,7 @@ async function timeoutAction(db: any, userId: string, body: any) {
   const hierarchy = game.is_no_trump ? E.HIER_TRESETTE : E.HIER_BRISCOLA;
   const card = E.autoPickCard(hand, leadSeed, hierarchy);
   const res = await applyPlay(db, game, seat, card, hand);
+  await advanceBots(db, game.id);
   return json({ ok: true, auto: "play", seat, card, ...res });
 }
 
@@ -313,26 +322,117 @@ async function sendMessage(db: any, userId: string, body: any) {
   return json({ ok: true });
 }
 
-// ---------------- HELPERS DI MUTAZIONE ----------------
+// Host: imposta QUANTI bot avere nella stanza (solo in lobby). I bot sono righe
+// game_players con is_bot=true e user_id sintetico. Ricompatta i posti a 0..n-1.
+async function setBots(db: any, userId: string, body: any) {
+  const { data: game } = await db.from("games").select("*").eq("id", body.gameId).single();
+  if (!game) return json({ error: "Partita non trovata" }, 404);
+  if (game.host_user !== userId) return json({ error: "Solo l'host può gestire i bot" }, 403);
+  if (game.status !== "lobby") return json({ error: "I bot si impostano solo prima dell'inizio" }, 400);
+
+  let count = Number(body.count);
+  if (!Number.isInteger(count) || count < 0) return json({ error: "Numero bot non valido" }, 400);
+
+  const { data: players } = await db.from("game_players")
+    .select("*").eq("game_id", game.id).order("seat");
+  const humans = (players ?? []).filter((p: any) => !p.is_bot)
+    .sort((a: any, b: any) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
+  const H = humans.length;
+  const maxBots = 5 - H;
+  if (count > maxBots) count = maxBots;
+
+  // 1) rimuovi i bot esistenti (libera i posti)
+  await db.from("game_players").delete().eq("game_id", game.id).eq("is_bot", true);
+
+  // 2) ricompatta gli umani su 0..H-1 (posti temporanei negativi per non violare unique)
+  for (let i = 0; i < H; i++) {
+    await db.from("game_players").update({ seat: -(i + 1) })
+      .eq("game_id", game.id).eq("user_id", humans[i].user_id);
+  }
+  for (let i = 0; i < H; i++) {
+    await db.from("game_players").update({ seat: i })
+      .eq("game_id", game.id).eq("user_id", humans[i].user_id);
+  }
+
+  // 3) inserisci `count` bot ai posti H..H+count-1
+  const botRows = [];
+  for (let i = 0; i < count; i++) {
+    botRows.push({
+      game_id: game.id, user_id: crypto.randomUUID(), seat: H + i,
+      display_name: "Bot " + (i + 1), is_bot: true,
+    });
+  }
+  if (botRows.length) {
+    const { error } = await db.from("game_players").insert(botRows);
+    if (error) return json({ error: error.message }, 400);
+  }
+  return json({ ok: true, humans: H, bots: count });
+}
+
+// Gioca automaticamente i turni dei BOT finché non tocca a un umano (o la fase
+// non è più declaring/playing). Riusa applyDeclare/applyPlay → include il logging
+// history e l'avanzamento del turno. Va chiamata dopo ogni azione che cambia turno.
+async function advanceBots(db: any, gameId: string) {
+  for (let guard = 0; guard < 300; guard++) {
+    const { data: game } = await db.from("games").select("*").eq("id", gameId).single();
+    if (!game) return;
+    if (game.phase !== "declaring" && game.phase !== "playing") return;
+    const seat = game.current_turn_seat;
+    const { data: me } = await db.from("game_players").select("*")
+      .eq("game_id", gameId).eq("seat", seat).maybeSingle();
+    if (!me || !me.is_bot) return;          // turno di un umano (o posto vuoto): stop
+    const n = game.num_players;
+
+    if (game.phase === "declaring") {
+      const { data: players } = await db.from("game_players")
+        .select("*").eq("game_id", gameId).order("seat");
+      const declaredCount = players.filter((p: any) => p.declared !== null).length;
+      const isLast = declaredCount === n - 1;
+      const order = E.seatOrder(n, game.trick_lead_seat);
+      const bySeat = new Map(players.map((p: any) => [p.seat, p]));
+      const myOrder = order.indexOf(seat);
+      const prior = order.slice(0, myOrder)
+        .map((s) => (bySeat.get(s) as any)?.declared)
+        .filter((v) => v !== null && v !== undefined) as number[];
+      const hand = await loadHand(db, game, seat);
+      const value = E.botDeclare(hand ?? [], game.briscola, game.is_no_trump,
+        game.n_cards, isLast, prior);
+      await applyDeclare(db, game, seat, value, isLast, n);
+    } else {
+      const hand = await loadHand(db, game, seat);
+      if (!hand || hand.length === 0) return;
+      const plays = (game.trick_plays ?? []) as E.Play[];
+      const leadSeed: E.Seed | null = plays.length ? plays[0].card.seed : null;
+      const briscolaSeed: E.Seed | null = game.briscola ? game.briscola.seed : null;
+      const card = E.botPlay(hand, plays, leadSeed, briscolaSeed, game.is_no_trump,
+        game.n_cards, game.trick_index, me.declared ?? 0, me.taken ?? 0, seat);
+      await applyPlay(db, game, seat, card, hand);
+    }
+  }
+}
+
+// ---------------- HELPERS DI MUTAZIONE (bot + umani) ----------------
 
 // Registra la dichiarazione di `seat`, poi avanza il turno o apre il gioco.
 async function applyDeclare(db: any, game: any, seat: number, value: number, isLast: boolean, n: number) {
   await db.from("game_players").update({ declared: value })
     .eq("game_id", game.id).eq("seat", seat);
 
-  // --- HISTORY: log dichiarazione (azione + stato visto) — best-effort ---
   await H.logDeclaration(db, game, seat, value, isLast, n);
 
   if (isLast) {
-    // tutte fatte -> si gioca; apre il primo (trick_lead_seat)
     await db.from("games").update({
-      phase: "playing", current_turn_seat: game.trick_lead_seat,
-      trick_index: 0, trick_plays: [], turn_deadline: nextDeadline(),
+      phase: "playing",
+      current_turn_seat: game.trick_lead_seat,
+      trick_index: 0,
+      trick_plays: [],
+      turn_deadline: nextDeadline(),
     }).eq("id", game.id);
   } else {
     const next = (game.current_turn_seat + 1) % n;
     await db.from("games").update({
-      current_turn_seat: next, turn_deadline: nextDeadline(),
+      current_turn_seat: next,
+      turn_deadline: nextDeadline(),
     }).eq("id", game.id);
   }
 }
@@ -342,14 +442,17 @@ async function applyDeclare(db: any, game: any, seat: number, value: number, isL
 async function applyPlay(db: any, game: any, seat: number, card: E.Card, hand: E.Card[]) {
   const idx = hand.findIndex((c) => c.seed === card.seed && c.rank === card.rank);
   if (idx < 0) return { error: "carta-non-in-mano" };
-  const handBefore = hand.slice();              // mano PRIMA di rimuovere la carta
+
+  const handBefore = hand.slice();
   hand.splice(idx, 1);
+
   await db.from("hands").update({ cards: hand })
-    .eq("game_id", game.id).eq("round_index", game.round_index).eq("seat", seat);
+    .eq("game_id", game.id)
+    .eq("round_index", game.round_index)
+    .eq("seat", seat);
 
   const plays = (game.trick_plays ?? []) as E.Play[];
 
-  // --- HISTORY: log carta giocata (azione + stato + mosse legali) — best-effort ---
   await H.logPlay(db, game, seat, card, handBefore, plays);
 
   const newPlays = [...plays, { seat, card }];
@@ -358,12 +461,13 @@ async function applyPlay(db: any, game: any, seat: number, card: E.Card, hand: E
   if (newPlays.length < n) {
     const next = (game.current_turn_seat + 1) % n;
     await db.from("games").update({
-      trick_plays: newPlays, current_turn_seat: next, turn_deadline: nextDeadline(),
+      trick_plays: newPlays,
+      current_turn_seat: next,
+      turn_deadline: nextDeadline(),
     }).eq("id", game.id);
     return {};
   }
 
-  // presa completa -> vincitore
   const briscolaSeed: E.Seed | null = game.briscola ? game.briscola.seed : null;
   const hierarchy = game.is_no_trump ? E.HIER_TRESETTE : E.HIER_BRISCOLA;
   const winner = E.resolveTrick(newPlays, briscolaSeed, hierarchy);
@@ -372,13 +476,16 @@ async function applyPlay(db: any, game: any, seat: number, card: E.Card, hand: E
   await db.from("game_players").update({ taken: winnerTaken + 1 })
     .eq("game_id", game.id).eq("seat", winner);
 
-  // --- HISTORY: log presa chiusa (tricks + won_trick) — best-effort ---
   await H.logTrickResolved(db, game, game.trick_index, newPlays, winner);
 
   await db.from("games").update({
-    trick_plays: newPlays, phase: "trick_done",
-    last_trick_winner: winner, current_turn_seat: winner, turn_deadline: null,
+    trick_plays: newPlays,
+    phase: "trick_done",
+    last_trick_winner: winner,
+    current_turn_seat: winner,
+    turn_deadline: null,
   }).eq("id", game.id);
+
   return { trickWinner: winner };
 }
 
@@ -387,20 +494,27 @@ async function applyPlay(db: any, game: any, seat: number, card: E.Card, hand: E
 async function loadGameAndPlayer(db: any, gameId: string, userId: string) {
   const { data: game } = await db.from("games").select("*").eq("id", gameId).single();
   if (!game) return { game: null, me: null };
+
   const { data: me } = await db.from("game_players").select("*")
     .eq("game_id", gameId).eq("user_id", userId).maybeSingle();
+
   return { game, me };
 }
 
 async function loadHand(db: any, game: any, seat: number): Promise<E.Card[] | null> {
   const { data: handRow } = await db.from("hands").select("cards")
-    .eq("game_id", game.id).eq("round_index", game.round_index).eq("seat", seat).maybeSingle();
+    .eq("game_id", game.id)
+    .eq("round_index", game.round_index)
+    .eq("seat", seat)
+    .maybeSingle();
+
   return handRow ? (handRow.cards as E.Card[]) : null;
 }
 
 async function taken(db: any, gameId: string, seat: number): Promise<number> {
   const { data } = await db.from("game_players").select("taken")
     .eq("game_id", gameId).eq("seat", seat).single();
+
   return data?.taken ?? 0;
 }
 
@@ -416,26 +530,37 @@ async function dealRoundDB(db: any, gameId: string, n: number, rounds: number[],
   const firstSeat = E.firstSeatFor(n, roundIndex);
   const d = E.dealRound(n, nCards, firstSeat);
 
-  // mani (private)
   const { data: players } = await db.from("game_players")
     .select("seat,user_id").eq("game_id", gameId).order("seat");
+
   const handRows = (players ?? []).map((p: any) => ({
-    game_id: gameId, round_index: roundIndex, seat: p.seat,
-    user_id: p.user_id, cards: d.hands[p.seat],
+    game_id: gameId,
+    round_index: roundIndex,
+    seat: p.seat,
+    user_id: p.user_id,
+    cards: d.hands[p.seat],
   }));
+
   await db.from("hands").upsert(handRows, { onConflict: "game_id,round_index,seat" });
 
-  // --- HISTORY: log inizio round (rounds + deals) — best-effort ---
   await H.logRoundStart(db, gameId, n, roundIndex, nCards, firstSeat, d, players ?? []);
 
-  // reset dichiarazioni/prese
   await db.from("game_players").update({ declared: null, taken: 0 }).eq("game_id", gameId);
 
   await db.from("games").update({
-    round_index: roundIndex, n_cards: nCards, dealer_seat: E.dealerFor(n, roundIndex),
-    current_turn_seat: firstSeat, briscola: d.briscola, is_no_trump: d.isNoTrump,
-    trick_index: 0, trick_lead_seat: firstSeat, trick_plays: [], last_trick_winner: null,
-    phase: "declaring", status: "playing", turn_deadline: nextDeadline(),
+    round_index: roundIndex,
+    n_cards: nCards,
+    dealer_seat: E.dealerFor(n, roundIndex),
+    current_turn_seat: firstSeat,
+    briscola: d.briscola,
+    is_no_trump: d.isNoTrump,
+    trick_index: 0,
+    trick_lead_seat: firstSeat,
+    trick_plays: [],
+    last_trick_winner: null,
+    phase: "declaring",
+    status: "playing",
+    turn_deadline: nextDeadline(),
   }).eq("id", gameId);
 }
 
@@ -443,22 +568,34 @@ async function dealRoundDB(db: any, gameId: string, n: number, rounds: number[],
 async function scoreRoundDB(db: any, game: any) {
   const { data: players } = await db.from("game_players")
     .select("*").eq("game_id", game.id).order("seat");
+
   const outcomeRows: any[] = [];
-  for (const p of players) {
+
+  for (const p of players ?? []) {
     const pts = E.scoreRound(p.declared ?? 0, p.taken);
     const scoreAfter = p.score + pts;
+
     await db.from("game_players").update({ score: scoreAfter })
       .eq("game_id", game.id).eq("seat", p.seat);
+
     await db.from("round_results").insert({
-      game_id: game.id, round_index: game.round_index, seat: p.seat,
-      declared: p.declared ?? 0, taken: p.taken, points: pts,
+      game_id: game.id,
+      round_index: game.round_index,
+      seat: p.seat,
+      declared: p.declared ?? 0,
+      taken: p.taken,
+      points: pts,
     });
+
     outcomeRows.push({
-      seat: p.seat, user_id: p.user_id, declared: p.declared ?? 0,
-      taken: p.taken, points: pts, scoreAfter,
+      seat: p.seat,
+      user_id: p.user_id,
+      declared: p.declared ?? 0,
+      taken: p.taken,
+      points: pts,
+      scoreAfter,
     });
   }
 
-  // --- HISTORY: log esiti di fine round — best-effort ---
   await H.logRoundOutcomes(db, game, outcomeRows);
 }

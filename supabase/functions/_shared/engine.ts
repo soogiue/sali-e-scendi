@@ -193,3 +193,68 @@ export function autoPickDeclare(
   if (forb === 0) return Math.min(1, nCards);
   return 0;
 }
+
+// ---------- BOT (euristica "vera": gioca per vincere) ----------
+// Speculare a ml/bots.py::HeuristicBot. A differenza di autoPick* (pensata per i
+// timeout, volutamente debole), questa stima le prese e cerca di indovinare.
+
+// Sposta una dichiarazione lontano dal valore vietato (solo per l'ultimo).
+function fixLastDeclare(
+  value: number, nCards: number, isLast: boolean, priorDeclares: readonly number[],
+): number {
+  const v = Math.max(0, Math.min(value, nCards));
+  if (!isLast) return v;
+  const forb = forbiddenLastDeclare(priorDeclares, nCards);
+  if (forb === null || v !== forb) return v;
+  for (const cand of [v - 1, v + 1]) {
+    if (cand >= 0 && cand <= nCards) return cand;
+  }
+  return v;
+}
+
+// Quante prese dichiarare, vista la mano.
+export function botDeclare(
+  hand: readonly Card[], briscola: Card | null, isNoTrump: boolean,
+  nCards: number, isLast: boolean, priorDeclares: readonly number[],
+): number {
+  const hierarchy = isNoTrump ? HIER_TRESETTE : HIER_BRISCOLA;
+  const bseed = briscola ? briscola.seed : null;
+  let est = 0;
+  for (const c of hand) {
+    const s = cardStrength(c.rank, hierarchy);
+    if (bseed && c.seed === bseed) est += s <= 4 ? 0.85 : 0.5;
+    else if (s <= 1) est += 0.55;
+    else if (s === 2) est += 0.3;
+    else est += 0.05;
+  }
+  return fixLastDeclare(Math.round(est), nCards, isLast, priorDeclares);
+}
+
+// Quale carta giocare.
+export function botPlay(
+  hand: readonly Card[], table: readonly Play[], leadSeed: Seed | null,
+  briscolaSeed: Seed | null, isNoTrump: boolean, nCards: number,
+  trickIndex: number, declared: number, takenSoFar: number, mySeat: number,
+): Card {
+  const hierarchy = isNoTrump ? HIER_TRESETTE : HIER_BRISCOLA;
+  const legal = legalCards(hand, leadSeed);
+  const need = declared - takenSoFar;
+  const tricksRemaining = nCards - trickIndex;
+  const want = need > 0 && tricksRemaining > 0;
+
+  const weakest = (cards: readonly Card[]) =>
+    cards.reduce((w, c) =>
+      cardStrength(c.rank, hierarchy) > cardStrength(w.rank, hierarchy) ? c : w, cards[0]);
+  const strongest = (cards: readonly Card[]) =>
+    cards.reduce((b, c) =>
+      cardStrength(c.rank, hierarchy) < cardStrength(b.rank, hierarchy) ? c : b, cards[0]);
+
+  // Sono di mano: se voglio prese esco forte, altrimenti scarico debole.
+  if (table.length === 0) return want ? strongest(legal) : weakest(legal);
+
+  // Sto rispondendo: carte che mi farebbero vincere ORA la presa.
+  const winners = legal.filter((c) =>
+    resolveTrick([...table, { seat: mySeat, card: c }], briscolaSeed, hierarchy) === mySeat);
+  if (want && winners.length > 0) return weakest(winners); // vinco economico
+  return weakest(legal);                                    // scarto la più debole
+}

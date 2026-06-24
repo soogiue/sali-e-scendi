@@ -1,0 +1,14 @@
+{
+  "version": "003_bot_players",
+  "description": "Add game_players.is_bot to support server-played bot seats; host chooses how many bots from the lobby",
+  "author": "soogiue",
+  "created_at": "2026-06-23",
+  "applied_at": null,
+  "status": "pending",
+  "breaking": false,
+  "schemas_added": [],
+  "tables_affected": ["public.game_players"],
+  "views_added": [],
+  "reason": "Giocare con i bot: l'host sceglie dalla stanza quanti bot aggiungere",
+  "notes": "I bot sono righe game_players con is_bot=true e user_id sintetico. Giocati dal server (Edge Function) via euristica botDeclare/botPlay in engine.ts. RLS invariata."
+}
