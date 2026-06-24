@@ -5,6 +5,34 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ## Migration applicate
 
+### ⏳ 004_autoplay
+- **Stato:** PENDING (creata, da applicare su Supabase)
+- **Creata:** 2026-06-24
+- **Autore:** soogiue
+- **Descrizione:** Colonna `public.game_players.autoplay` (bool, default false)
+  per il tasto **AUTOGAME**: un umano può delegare il proprio posto a un bot ML
+  in modo reversibile.
+- **Schemi aggiunti:** nessuno
+- **Tabelle:** public.game_players (+autoplay)
+- **Breaking:** No — colonna nuova con default.
+- **Scopo:** Non bloccare la partita se un giocatore smette; il server gioca per
+  lui con i modelli ML (`mlbot.ts`), e può riprendere il controllo.
+
+---
+
+### ⏳ 003_bot_players
+- **Stato:** PENDING (creata, da applicare su Supabase)
+- **Creata:** 2026-06-23
+- **Autore:** soogiue
+- **Descrizione:** Colonna `public.game_players.is_bot` (bool, default false)
+  per i posti-bot impostati dall'host nella lobby.
+- **Schemi aggiunti:** nessuno
+- **Tabelle:** public.game_players (+is_bot)
+- **Breaking:** No — colonna nuova con default.
+- **Scopo:** Riempire le stanze con bot giocati dal server.
+
+---
+
 ### ⏳ 002_chat_messages
 - **Stato:** PENDING (creata, non ancora applicata su Supabase)
 - **Creata:** 2026-06-23

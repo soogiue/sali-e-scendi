@@ -80,18 +80,28 @@ Il bot allenato **batte già l'euristica** da cui ha imparato, e l'euristica
 distrugge il random (conferma che il gioco premia le decisioni giuste). Con più
 partite e più iterazioni il distacco cresce.
 
-## Come metterlo nel gioco (passo successivo)
+## Come è messo nel gioco (FATTO ✅)
 
-I modelli sono Python/scikit-learn, mentre la Edge Function è in Deno/TypeScript.
-Tre opzioni, dalla più semplice:
+Scelta: **inferenza integrata in Deno, senza dipendenze**. Gli alberi del
+modello (`HistGradientBoostingRegressor`) vengono serializzati e attraversati
+in puro TypeScript dentro la Edge Function. Niente ONNX/WASM, niente
+microservizi, cold-start istantaneo sull'edge, e funziona dentro il flusso
+autoritativo (così anche l'AUTOGAME usa i modelli).
 
-1. **Bot-player esterno**: un piccolo processo Python che si autentica come un
-   utente e gioca chiamando le stesse azioni dell'Edge Function
-   (`join_game`, `declare`, `play_card`). Zero modifiche al server. Ideale per
-   riempire le stanze con bot.
-2. **Microservizio di inferenza**: un endpoint Python (FastAPI) che riceve lo
-   stato e risponde con la mossa; l'Edge Function lo chiama per i seat-bot.
-3. **Esporto in ONNX** e inferenza dentro Deno (più lavoro, più integrato).
+Pipeline:
+
+1. `python export_models_json.py` → genera
+   `../supabase/functions/_shared/models.json` **e** `models.ts`
+   (la function importa `models.ts`). Lo script **valida** che la traversata
+   manuale degli alberi combaci con `model.predict()` (errore 0.0).
+2. `../supabase/functions/_shared/mlbot.ts` riproduce `features.py` 1:1 e fa
+   l'inferenza (`modelDeclare`, `modelPlay`). Parità verificata con
+   `parity_dump.py` + `parity_check.mjs` (vettori e predizioni identici a Python).
+3. In `game/index.ts`, `advanceBots` usa `mlbot.ts` per i posti `is_bot` **o**
+   `autoplay` (fallback all'euristica di `engine.ts` se i modelli mancano).
+
+> Per riallenare e riportare i modelli nel gioco: `python train.py …` →
+> `python export_models_json.py` → `supabase functions deploy game`.
 
 ## Note tecniche
 

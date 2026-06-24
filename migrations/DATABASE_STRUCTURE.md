@@ -19,7 +19,9 @@ Una partita / stanza. Colonne principali: `id`, `code` (unique), `status`
 ### `public.game_players`
 Giocatori di una partita (dati pubblici ai membri). `id`, `game_id`→games,
 `user_id`, `seat`, `display_name`, `score`, `declared`, `taken`, `connected`,
-`joined_at`. Unique: `(game_id, seat)`, `(game_id, user_id)`.
+`joined_at`, `is_bot` (migration 003: posto-bot della lobby), `autoplay`
+(migration 004: posto umano in AUTOGAME, giocato dal server). Unique:
+`(game_id, seat)`, `(game_id, user_id)`.
 
 ### `public.hands`
 Le mani, **private** (RLS: ognuno vede solo la propria). `game_id`,

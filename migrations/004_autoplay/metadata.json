@@ -1,0 +1,14 @@
+{
+  "version": "004_autoplay",
+  "description": "Add game_players.autoplay: a human seat can be auto-played by the server (ML bot), reversibly",
+  "author": "soogiue",
+  "created_at": "2026-06-24",
+  "applied_at": null,
+  "status": "pending",
+  "breaking": false,
+  "schemas_added": [],
+  "tables_affected": ["public.game_players"],
+  "views_added": [],
+  "reason": "Tasto AUTOGAME: delegare il proprio posto a un bot (modelli ML) in modo reversibile",
+  "notes": "autoplay distinto da is_bot. advanceBots gioca per i posti is_bot OR autoplay con mlbot.ts (fallback euristica). RLS invariata."
+}

@@ -14,17 +14,21 @@
 //                               il server gioca/dichiara in automatico)
 //   - send_message{ gameId, body }            (membro: invia un messaggio di chat)
 //   - set_bots    { gameId, count }            (host/lobby: imposta quanti bot)
+//   - toggle_autoplay { gameId, on? }          (AUTOGAME: delega/riprendi il posto a un bot ML)
+//   - claim_all   { gameId }                   (TUTTO MIO: pretende tutte le prese restanti)
+//   - advance_bot { gameId }                   (host: fa fare UNA mossa al bot/autoplay di turno)
 // ============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as E from "../_shared/engine.ts";
 import * as H from "../_shared/history.ts";
+import * as M from "../_shared/mlbot.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 // Secondi a disposizione di ogni giocatore per ogni mossa (dichiarazione o carta).
-const TURN_SECONDS = 15;
+const TURN_SECONDS = 30;
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -73,6 +77,9 @@ Deno.serve(async (req) => {
       case "timeout":       return await timeoutAction(db, user.id, body);
       case "send_message":  return await sendMessage(db, user.id, body);
       case "set_bots":      return await setBots(db, user.id, body);
+      case "toggle_autoplay": return await toggleAutoplay(db, user.id, body);
+      case "claim_all":     return await claimAll(db, user.id, body);
+      case "advance_bot":   return await advanceBot(db, user.id, body);
       default:              return json({ error: "Azione sconosciuta: " + action }, 400);
     }
   } catch (e) {
@@ -149,9 +156,7 @@ async function startGame(db: any, userId: string, body: any) {
     status: "playing", num_players: n, max_cards: maxCards, rounds, round_index: 0,
   }).eq("id", game.id);
 
-  await dealRoundDB(db, game.id, n, rounds, 0);
-  await advanceBots(db, game.id);
-  return json({ ok: true });
+  await dealRoundDB(db, game.id, n, rounds, 0);  return json({ ok: true });
 }
 
 async function declare(db: any, userId: string, body: any) {
@@ -176,9 +181,7 @@ async function declare(db: any, userId: string, body: any) {
       return json({ error: "Non puoi dichiarare " + forb + " (la somma non può fare " + game.n_cards + ")" }, 400);
   }
 
-  await applyDeclare(db, game, me.seat, value, isLast, n);
-  await advanceBots(db, game.id);
-  return json({ ok: true });
+  await applyDeclare(db, game, me.seat, value, isLast, n);  return json({ ok: true });
 }
 
 async function playCard(db: any, userId: string, body: any) {
@@ -199,7 +202,6 @@ async function playCard(db: any, userId: string, body: any) {
     return json({ error: "Mossa non valida: devi rispondere al seme se puoi" }, 400);
 
   const res = await applyPlay(db, game, me.seat, card, hand);
-  await advanceBots(db, game.id);
   return json({ ok: true, ...res });
 }
 
@@ -211,18 +213,22 @@ async function continueAfter(db: any, userId: string, body: any) {
   if (game.phase === "trick_done") {
     const nextTrick = game.trick_index + 1;
     if (nextTrick < game.n_cards) {
-      await db.from("games").update({
+      // CAS: vince solo la prima `continue` (phase ancora trick_done) → niente
+      // doppio avanzamento di presa se due richieste arrivano insieme.
+      const { data: adv } = await db.from("games").update({
         phase: "playing", trick_index: nextTrick,
         trick_lead_seat: game.last_trick_winner,
         current_turn_seat: game.last_trick_winner, trick_plays: [],
         turn_deadline: nextDeadline(),
-      }).eq("id", game.id);
-      await advanceBots(db, game.id);
-      return json({ ok: true });
+      }).eq("id", game.id).eq("phase", "trick_done").select("id");
+      return json({ ok: true, advanced: !!(adv && adv.length) });
     }
-    // fine round -> punteggi
-    await scoreRoundDB(db, game);
-    await db.from("games").update({ phase: "round_end", turn_deadline: null }).eq("id", game.id);
+    // fine round: prima CLAIM (trick_done → round_end), poi calcola i punti.
+    // Così i punteggi non vengono applicati due volte da `continue` concorrenti.
+    const { data: claimed } = await db.from("games")
+      .update({ phase: "round_end", turn_deadline: null })
+      .eq("id", game.id).eq("phase", "trick_done").select("id");
+    if (claimed && claimed.length) await scoreRoundDB(db, game);
     return json({ ok: true });
   }
 
@@ -230,7 +236,6 @@ async function continueAfter(db: any, userId: string, body: any) {
     const nextRound = game.round_index + 1;
     if (nextRound < game.rounds.length) {
       await dealRoundDB(db, game.id, n, game.rounds, nextRound);
-      await advanceBots(db, game.id);
     } else {
       // fine partita
       const { data: players } = await db.from("game_players")
@@ -277,7 +282,6 @@ async function timeoutAction(db: any, userId: string, body: any) {
     const others = players.filter((p: any) => p.declared !== null).map((p: any) => p.declared);
     const value = E.autoPickDeclare(others, game.n_cards, isLast);
     await applyDeclare(db, game, seat, value, isLast, n);
-    await advanceBots(db, game.id);
     return json({ ok: true, auto: "declare", seat, value });
   }
 
@@ -289,7 +293,6 @@ async function timeoutAction(db: any, userId: string, body: any) {
   const hierarchy = game.is_no_trump ? E.HIER_TRESETTE : E.HIER_BRISCOLA;
   const card = E.autoPickCard(hand, leadSeed, hierarchy);
   const res = await applyPlay(db, game, seat, card, hand);
-  await advanceBots(db, game.id);
   return json({ ok: true, auto: "play", seat, card, ...res });
 }
 
@@ -369,54 +372,181 @@ async function setBots(db: any, userId: string, body: any) {
   return json({ ok: true, humans: H, bots: count });
 }
 
-// Gioca automaticamente i turni dei BOT finché non tocca a un umano (o la fase
-// non è più declaring/playing). Riusa applyDeclare/applyPlay → include il logging
-// history e l'avanzamento del turno. Va chiamata dopo ogni azione che cambia turno.
-async function advanceBots(db: any, gameId: string) {
-  for (let guard = 0; guard < 300; guard++) {
-    const { data: game } = await db.from("games").select("*").eq("id", gameId).single();
-    if (!game) return;
-    if (game.phase !== "declaring" && game.phase !== "playing") return;
-    const seat = game.current_turn_seat;
-    const { data: me } = await db.from("game_players").select("*")
-      .eq("game_id", gameId).eq("seat", seat).maybeSingle();
-    if (!me || !me.is_bot) return;          // turno di un umano (o posto vuoto): stop
-    const n = game.num_players;
+// Inserisce un messaggio "di sistema" nella chat della stanza (notifiche di gioco).
+async function systemChat(db: any, game: any, seat: number, name: string, text: string) {
+  await db.from("chat_messages").insert({
+    game_id: game.id, user_id: crypto.randomUUID(), seat, display_name: name, body: text,
+  }).then(() => {}, () => {});  // best-effort: una notifica non deve mai bloccare l'azione
+}
 
-    if (game.phase === "declaring") {
-      const { data: players } = await db.from("game_players")
-        .select("*").eq("game_id", gameId).order("seat");
-      const declaredCount = players.filter((p: any) => p.declared !== null).length;
-      const isLast = declaredCount === n - 1;
-      const order = E.seatOrder(n, game.trick_lead_seat);
-      const bySeat = new Map(players.map((p: any) => [p.seat, p]));
-      const myOrder = order.indexOf(seat);
-      const prior = order.slice(0, myOrder)
-        .map((s) => (bySeat.get(s) as any)?.declared)
-        .filter((v) => v !== null && v !== undefined) as number[];
-      const hand = await loadHand(db, game, seat);
-      const value = E.botDeclare(hand ?? [], game.briscola, game.is_no_trump,
-        game.n_cards, isLast, prior);
-      await applyDeclare(db, game, seat, value, isLast, n);
-    } else {
-      const hand = await loadHand(db, game, seat);
-      if (!hand || hand.length === 0) return;
-      const plays = (game.trick_plays ?? []) as E.Play[];
-      const leadSeed: E.Seed | null = plays.length ? plays[0].card.seed : null;
-      const briscolaSeed: E.Seed | null = game.briscola ? game.briscola.seed : null;
-      const card = E.botPlay(hand, plays, leadSeed, briscolaSeed, game.is_no_trump,
-        game.n_cards, game.trick_index, me.declared ?? 0, me.taken ?? 0, seat);
-      await applyPlay(db, game, seat, card, hand);
-    }
+// AUTOGAME: un giocatore delega (o riprende) il proprio posto al bot ML. Reversibile.
+async function toggleAutoplay(db: any, userId: string, body: any) {
+  const { game, me } = await loadGameAndPlayer(db, body.gameId, userId);
+  if (!game) return json({ error: "Partita non trovata" }, 404);
+  if (!me) return json({ error: "Non sei in questa partita" }, 403);
+  if (me.is_bot) return json({ error: "Questo posto è già un bot" }, 400);
+
+  const on = body.on === undefined ? !me.autoplay : !!body.on;
+  await db.from("game_players").update({ autoplay: on })
+    .eq("game_id", game.id).eq("seat", me.seat);
+
+  await systemChat(db, game, me.seat, me.display_name,
+    on ? "🤖 è passato in AUTOGAME (gioca il bot)" : "🙋 ha ripreso il controllo");
+
+  // Se è già il suo turno, ci pensa il client host a far partire il bot (con il
+  // ritardo di 2-3s, via azione advance_bot); il timeout resta come riserva.
+  return json({ ok: true, autoplay: on });
+}
+
+// TUTTO MIO: il giocatore dichiara di prendere TUTTE le prese restanti. Verifichiamo
+// (engine.verifyClaimAll, analisi doppio morto) se è dimostrabile contro qualsiasi
+// difesa. Se sì, assegniamo le prese e chiudiamo il round; se è falsa, penalità e si
+// continua; se non verificabile entro il budget, si continua senza penalità.
+async function claimAll(db: any, userId: string, body: any) {
+  const { game, me } = await loadGameAndPlayer(db, body.gameId, userId);
+  if (!game) return json({ error: "Partita non trovata" }, 404);
+  if (!me) return json({ error: "Non sei in questa partita" }, 403);
+  if (game.phase !== "playing") return json({ error: "Puoi dichiarare TUTTO MIO solo mentre si gioca" }, 400);
+  if (me.seat !== game.current_turn_seat) return json({ error: "Puoi dichiarare TUTTO MIO solo nel tuo turno" }, 400);
+
+  // CLAIM del turno: impedisce che un timeout giochi una carta mentre verifichiamo.
+  const { data: claimedTurn } = await db.from("games").update({ turn_deadline: null })
+    .eq("id", game.id).eq("phase", "playing").eq("current_turn_seat", me.seat)
+    .not("turn_deadline", "is", null).select("id");
+  if (!claimedTurn || claimedTurn.length === 0)
+    return json({ error: "Riprova: il turno è appena cambiato" }, 409);
+
+  const n = game.num_players;
+  const remaining = game.n_cards - game.trick_index;  // prese restanti (inclusa quella in corso)
+
+  // carica tutte le mani residue del round
+  const { data: handRows } = await db.from("hands").select("seat,cards")
+    .eq("game_id", game.id).eq("round_index", game.round_index);
+  const hands: Record<number, E.Card[]> = {};
+  for (const r of handRows ?? []) hands[r.seat] = (r.cards as E.Card[]) ?? [];
+  if (!hands[me.seat] || hands[me.seat].length === 0)
+    return json({ error: "Non hai carte in mano" }, 400);
+
+  const table = (game.trick_plays ?? []) as E.Play[];
+  const briscolaSeed: E.Seed | null = game.briscola ? game.briscola.seed : null;
+  const hierarchy = game.is_no_trump ? E.HIER_TRESETTE : E.HIER_BRISCOLA;
+
+  await systemChat(db, game, me.seat, me.display_name,
+    "🃏 TUTTO MIO! dichiara di prendere tutte le " + remaining + " prese restanti…");
+
+  const verdict = E.verifyClaimAll(hands, me.seat, table, me.seat, n, briscolaSeed, hierarchy);
+
+  if (verdict === "proven") {
+    // assegna al claimant le prese restanti e chiudi il round
+    const newTaken = (me.taken ?? 0) + remaining;
+    await db.from("game_players").update({ taken: newTaken })
+      .eq("game_id", game.id).eq("seat", me.seat);
+    await scoreRoundDB(db, game);
+    await db.from("games").update({ phase: "round_end", turn_deadline: null }).eq("id", game.id);
+    await systemChat(db, game, me.seat, me.display_name,
+      "✅ TUTTO MIO confermato: prende tutte le prese restanti. Round chiuso.");
+    return json({ ok: true, verdict, awarded: remaining });
   }
+
+  // Non confermato: si continua a giocare → ripristino il timer del turno (era
+  // stato azzerato dal claim) così il giocatore può giocare normalmente.
+  await db.from("games").update({ turn_deadline: nextDeadline() }).eq("id", game.id);
+
+  if (verdict === "refuted") {
+    // penalità proporzionale alla baldanza: -(prese che pretendeva)
+    const penalty = remaining;
+    await db.from("game_players").update({ score: (me.score ?? 0) - penalty })
+      .eq("game_id", game.id).eq("seat", me.seat);
+    await systemChat(db, game, me.seat, me.display_name,
+      "❌ TUTTO MIO sbagliato! Non prenderebbe tutto: penalità −" + penalty + ". Si continua.");
+    return json({ ok: true, verdict, penalty });
+  }
+
+  // too_complex
+  await systemChat(db, game, me.seat, me.display_name,
+    "⚠️ TUTTO MIO non verificabile in automatico: si continua a giocare.");
+  return json({ ok: true, verdict });
+}
+
+// Azione: fa fare UNA mossa al bot/autoplay di turno. La chiama il client host
+// dopo 2-3s quando tocca a un bot (vedi maybePumpBot nel frontend). Deve essere
+// un membro della partita. Idempotente grazie ai claim in applyDeclare/applyPlay.
+async function advanceBot(db: any, userId: string, body: any) {
+  const { game, me } = await loadGameAndPlayer(db, body.gameId, userId);
+  if (!game) return json({ error: "Partita non trovata" }, 404);
+  if (!me) return json({ error: "Non sei in questa partita" }, 403);
+  const acted = await botStepOnce(db, game.id);
+  return json({ ok: true, acted });
+}
+
+// Esegue UNA mossa per il bot/autoplay di turno (dichiarazione o carta), con i
+// modelli ML (fallback euristica). Ritorna true se ha agito. Il timing (attesa
+// 2-3s tra una mossa e l'altra) è guidato dal client host, così le mosse non
+// sono istantanee e si vedono "pensare" i bot. Le applyDeclare/applyPlay hanno
+// un claim atomico, quindi chiamate doppie/concorrenti non rompono nulla.
+async function botStepOnce(db: any, gameId: string): Promise<boolean> {
+  const { data: game } = await db.from("games").select("*").eq("id", gameId).single();
+  if (!game) return false;
+  if (game.phase !== "declaring" && game.phase !== "playing") return false;
+  const seat = game.current_turn_seat;
+  const { data: me } = await db.from("game_players").select("*")
+    .eq("game_id", gameId).eq("seat", seat).maybeSingle();
+  // Gioca in automatico per: i bot della lobby (is_bot) e gli umani in AUTOGAME (autoplay).
+  if (!me || !(me.is_bot || me.autoplay)) return false;  // turno di un umano attivo
+  const n = game.num_players;
+  const useModels = M.modelsLoaded();
+
+  if (game.phase === "declaring") {
+    const { data: players } = await db.from("game_players")
+      .select("*").eq("game_id", gameId).order("seat");
+    const declaredCount = players.filter((p: any) => p.declared !== null).length;
+    const isLast = declaredCount === n - 1;
+    const order = E.seatOrder(n, game.trick_lead_seat);
+    const bySeat = new Map(players.map((p: any) => [p.seat, p]));
+    const myOrder = order.indexOf(seat);
+    const prior = order.slice(0, myOrder)
+      .map((s) => (bySeat.get(s) as any)?.declared)
+      .filter((v) => v !== null && v !== undefined) as number[];
+    const hand = await loadHand(db, game, seat);
+    const value = useModels
+      ? M.modelDeclare({
+          hand: hand ?? [], briscola: game.briscola, isNoTrump: game.is_no_trump,
+          nCards: game.n_cards, numPlayers: n, declarationOrder: myOrder,
+          isLast, priorDeclares: prior,
+        })
+      : E.botDeclare(hand ?? [], game.briscola, game.is_no_trump,
+          game.n_cards, isLast, prior);
+    await applyDeclare(db, game, seat, value, isLast, n);
+  } else {
+    const hand = await loadHand(db, game, seat);
+    if (!hand || hand.length === 0) return false;
+    const plays = (game.trick_plays ?? []) as E.Play[];
+    const leadSeed: E.Seed | null = plays.length ? plays[0].card.seed : null;
+    const briscolaSeed: E.Seed | null = game.briscola ? game.briscola.seed : null;
+    const card = useModels
+      ? M.modelPlay({
+          hand, table: plays, leadSeed, briscolaSeed, isNoTrump: game.is_no_trump,
+          nCards: game.n_cards, numPlayers: n, trickIndex: game.trick_index,
+          declared: me.declared ?? 0, takenSoFar: me.taken ?? 0, mySeat: seat,
+        })
+      : E.botPlay(hand, plays, leadSeed, briscolaSeed, game.is_no_trump,
+          game.n_cards, game.trick_index, me.declared ?? 0, me.taken ?? 0, seat);
+    await applyPlay(db, game, seat, card, hand);
+  }
+  return true;
 }
 
 // ---------------- HELPERS DI MUTAZIONE (bot + umani) ----------------
 
 // Registra la dichiarazione di `seat`, poi avanza il turno o apre il gioco.
+// CLAIM ATOMICO: la update vale solo se `declared` è ancora NULL per quel posto.
+// Così, se `declare` (umano) e `timeout` (auto) arrivano insieme, una sola vince
+// e il turno avanza UNA volta sola (niente giocatori saltati). Il valore umano
+// è preservato perché chi scrive per primo "blocca" la cella.
 async function applyDeclare(db: any, game: any, seat: number, value: number, isLast: boolean, n: number) {
-  await db.from("game_players").update({ declared: value })
-    .eq("game_id", game.id).eq("seat", seat);
+  const { data: claimed } = await db.from("game_players").update({ declared: value })
+    .eq("game_id", game.id).eq("seat", seat).is("declared", null).select("seat");
+  if (!claimed || claimed.length === 0) return;  // qualcun altro ha già dichiarato per questo posto
 
   await H.logDeclaration(db, game, seat, value, isLast, n);
 
@@ -439,7 +569,18 @@ async function applyDeclare(db: any, game: any, seat: number, value: number, isL
 
 // Gioca `card` (gia' verificata legale) dalla mano `hand` di `seat`:
 // toglie la carta, aggiorna il tavolo e, se la presa e' completa, risolve.
-async function applyPlay(db: any, game: any, seat: number, card: E.Card, hand: E.Card[]) {
+// CLAIM ATOMICO: azzera `turn_deadline` solo se è ancora il turno di `seat` in
+// fase playing (e il deadline non è già null). Una sola richiesta vince, quindi
+// `play_card` e `timeout` concorrenti non giocano due carte / non saltano turni.
+async function applyPlay(db: any, gameSnap: any, seat: number, card: E.Card, hand: E.Card[]) {
+  const { data: claimed } = await db.from("games").update({ turn_deadline: null })
+    .eq("id", gameSnap.id).eq("phase", "playing").eq("current_turn_seat", seat)
+    .not("turn_deadline", "is", null).select("id");
+  if (!claimed || claimed.length === 0) return { lost: true };  // turno già gestito da un'altra richiesta
+
+  // stato autorevole DOPO il claim (evita snapshot stantii del tavolo)
+  const { data: game } = await db.from("games").select("*").eq("id", gameSnap.id).single();
+
   const idx = hand.findIndex((c) => c.seed === card.seed && c.rank === card.rank);
   if (idx < 0) return { error: "carta-non-in-mano" };
 

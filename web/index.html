@@ -125,9 +125,23 @@
   .badge{ min-width:22px; height:22px; padding:0 4px; border-radius:999px; display:flex; align-items:center; justify-content:center;
     font-size:.74rem; font-weight:800; border:1.5px solid rgba(255,255,255,.55); box-shadow:0 2px 5px rgba(0,0,0,.4); }
   .badge.dich{ background:linear-gradient(180deg,#ffd969,#e0a014); color:#3a2a06; }
-  .badge.pts{ background:linear-gradient(180deg,#5bc0ff,#2a86d6); color:#06243a; }
+  .badge.pts,.badge.taken{ background:linear-gradient(180deg,#5bc0ff,#2a86d6); color:#06243a; }
+  /* posizione in classifica (#1, #2…) accanto al cerchietto */
+  .rankno{ position:absolute; top:-8px; left:-8px; z-index:9; min-width:20px; height:20px; padding:0 4px;
+    border-radius:999px; display:flex; align-items:center; justify-content:center; font-size:.68rem; font-weight:800;
+    background:linear-gradient(180deg,#3a3f4d,#22262f); color:#fff; border:1.5px solid rgba(255,255,255,.6);
+    box-shadow:0 2px 6px rgba(0,0,0,.5); }
+  .rankno.r1{ background:linear-gradient(180deg,#ffe169,#e0a014); color:#3a2a06; }
   .pname{ margin-top:4px; font-size:.74rem; font-weight:600; max-width:84px; text-align:center;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-shadow:0 1px 3px rgba(0,0,0,.6); }
+  .autotag{ margin-right:3px; }
+
+  /* barra controlli di gioco (autogame / tutto mio) */
+  .gamectrl{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:8px; }
+  .gamectrl button{ width:auto; margin:0; padding:9px 14px; font-size:.86rem; box-shadow:0 3px 0 #b8861d,0 6px 12px rgba(0,0,0,.22); }
+  .gamectrl button.ghost{ box-shadow:none; }
+  .gamectrl button.danger{ background:linear-gradient(180deg,#ff7a7a,#d63a3a); color:#fff; box-shadow:0 3px 0 #9c2626,0 6px 12px rgba(0,0,0,.25); }
+  .gamectrl button.on{ background:linear-gradient(180deg,#7ee29a,#34a85a); color:#06301a; box-shadow:0 3px 0 #1f7a3e,0 6px 12px rgba(0,0,0,.22); }
 
   /* la mia mano + barra azioni */
   .myhand{ display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin:4px 0 2px; }
@@ -161,7 +175,14 @@
     box-shadow:0 -10px 30px rgba(0,0,0,.4); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
     display:flex; flex-direction:column; }
   /* lascia spazio in fondo alla pagina così il dock non copre i contenuti */
-  body.has-dock #app{ padding-bottom:230px; }
+  body.has-dock #app{ padding-bottom:240px; }
+  /* quando la chat in partita è compressa, basta lo spazio per la barretta */
+  body.has-dock-collapsed #app{ padding-bottom:58px; }
+  /* dock chat in partita: comprimibile, intestazione cliccabile */
+  .chat-dock.ingame .chat-head{ cursor:pointer; user-select:none; }
+  .chat-dock.ingame.collapsed{ box-shadow:0 -4px 14px rgba(0,0,0,.35); }
+  .chat-caret{ font-size:.8rem; opacity:.8; }
+  .chat-head .chat-badge{ position:static; margin-left:6px; display:inline-flex; vertical-align:middle; }
 
   .chat-head{ font-weight:800; font-size:.9rem; padding:9px 12px;
     border-bottom:1px solid rgba(255,255,255,.10); display:flex; align-items:center; justify-content:space-between; }
@@ -215,7 +236,7 @@ const CFG = window.SALI_CONFIG || {};
 const CARD_BASE = CFG.CARD_BASE || "cards/";
 const SEED_IT = { cups:"Coppe", gold:"Denari", swords:"Spade", sticks:"Bastoni" };
 const RANK_IT = { Ace:"Asso","2":"2","3":"3","4":"4","5":"5","6":"6","7":"7", Jack:"Fante", Horse:"Cavallo", King:"Re" };
-const TURN_SECONDS = 15; // deve combaciare col server
+const TURN_SECONDS = 30; // deve combaciare col server
 
 const app = document.getElementById("app");
 const errBox = document.getElementById("err");
@@ -228,8 +249,9 @@ let gameId=null, myCode=null, mySeat=null;
 let game=null, players=[], myHand=[], roundResults=[];
 let channel=null, lastAutoContinue="";
 let lastTO={ key:"", at:0 }; // throttling chiamate timeout
+let botPump={ key:"", timer:0 }; // pacing mosse bot (delay 2-3s, guidato dall'host)
 let chatMessages = [];     // messaggi della stanza, ordinati per created_at
-let chatOpen = false;      // sheet aperta in partita?
+let chatOpen = true;       // chat in partita: parte APERTA (dock comprimibile in fondo)
 let chatUnread = 0;        // contatore non letti (badge in partita)
 
 // ---- helpers regole (solo per la UI; il server è autoritativo) ----
@@ -304,8 +326,52 @@ async function doDeclare(v){ await invoke("declare", { gameId, value:v }); }
 async function doPlay(card){ await invoke("play_card", { gameId, card }); }
 async function doContinue(){ await invoke("continue", { gameId }); }
 async function doSetBots(count){ await invoke("set_bots", { gameId, count }); }
+async function doToggleAutoplay(){
+  const me = players.find(p=>p.seat===mySeat);
+  const turningOn = !(me && me.autoplay);
+  if(turningOn && !confirm("Attivare AUTOGAME? Un bot giocherà al posto tuo finché non riprendi il controllo.")) return;
+  await invoke("toggle_autoplay", { gameId, on: turningOn });
+}
+async function doClaimAll(){
+  if(!confirm("Dichiari TUTTO MIO?\nIl server verifica se prendi davvero tutte le prese restanti.\nSe la pretesa è falsa subisci una penalità.")) return;
+  await invoke("claim_all", { gameId });
+}
+async function doAdvanceBot(){ await invoke("advance_bot", { gameId }); }
 
-window.UI = { doCreate, doJoin, doStart, doDeclare, doPlay, doContinue, doSetBots };
+window.UI = { doCreate, doJoin, doStart, doDeclare, doPlay, doContinue, doSetBots, doToggleAutoplay, doClaimAll };
+
+// PACING BOT: quando tocca a un bot/autoplay, l'host (riserva: chiunque) aspetta
+// 2-3s e poi fa fare UNA mossa (advance_bot). Dopo la mossa il realtime ridisegna
+// e, se tocca ancora a un bot, si ripianifica → ogni mossa ha il suo ritardo.
+function maybePumpBot(){
+  if(!game || (game.phase!=="declaring" && game.phase!=="playing")) return;
+  const cur = players.find(p=>p.seat===game.current_turn_seat);
+  if(!cur || !(cur.is_bot || cur.autoplay)) return;     // tocca a un umano attivo
+  const amHost = game.host_user===myUserId;
+  if(!amHost) return;                                   // lo guida l'host
+  const declaredCount = players.filter(p=>p.declared!=null).length;
+  const key = game.phase+":"+game.round_index+":"+game.trick_index+":"+game.current_turn_seat+":"+declaredCount;
+  if(botPump.key===key) return;                          // già pianificato per questo stato
+  botPump.key = key;
+  clearTimeout(botPump.timer);
+  const delay = 2000 + Math.random()*1000;               // 2-3s, naturale
+  botPump.timer = setTimeout(()=>{ doAdvanceBot(); }, delay);
+}
+
+// barra controlli in partita: AUTOGAME (sempre) + TUTTO MIO (solo nel tuo turno di gioco)
+function gameControlsHTML(canClaim){
+  const me = players.find(p=>p.seat===mySeat);
+  if(!me || me.is_bot) return "";
+  const auto = !!me.autoplay;
+  const autoBtn = '<button class="'+(auto?'on':'ghost')+'" id="btn-auto">'+
+    (auto?'🙋 Riprendi controllo':'🤖 Autogame')+'</button>';
+  const claimBtn = canClaim ? '<button class="danger" id="btn-claim">🃏 TUTTO MIO</button>' : '';
+  return '<div class="gamectrl">'+autoBtn+claimBtn+'</div>';
+}
+function wireGameControls(){
+  const a=document.getElementById("btn-auto"); if(a) a.onclick=()=>UI.doToggleAutoplay();
+  const c=document.getElementById("btn-claim"); if(c) c.onclick=()=>UI.doClaimAll();
+}
 
 // ---- realtime + refresh ----
 async function enterGame(){
@@ -324,7 +390,7 @@ async function enterGame(){
     .eq("game_id", gameId).order("created_at", { ascending:true }).limit(100);
   chatMessages = c.data || [];
   chatUnread = 0;
-  chatOpen = false;
+  chatOpen = true;   // la chat in partita parte aperta (dock comprimibile in fondo)
   renderChat();
 }
 
@@ -416,14 +482,19 @@ function seatHTML(p, n){
   const ring = active ? '<div class="ring" id="ring-'+p.seat+'" style="--pct:100;--ringcol:#3fd07a"></div>' : '';
   const cd = active ? '<div class="cd" id="cd-'+p.seat+'">'+TURN_SECONDS+'</div>' : '';
   const dich = (p.declared==null) ? '–' : p.declared;
+  const taken = (p.taken==null) ? 0 : p.taken;
+  // posizione in classifica per punti totali (#1 = chi sta vincendo); pari merito = stesso #
+  const rank = players.filter(q=>q.score>p.score).length + 1;
+  const autoTag = p.autoplay ? '<span class="autotag" title="In autogame">🤖</span>' : '';
   const cls = ["pseat"]; if(active) cls.push("active"); if(isHost) cls.push("host");
   return '<div class="'+cls.join(" ")+'" style="left:'+x+'%;top:'+y+'%">'+
     '<div class="avwrap">'+ring+
+      '<div class="rankno'+(rank===1?' r1':'')+'" title="Posizione in classifica">#'+rank+'</div>'+
       '<div class="avatar" style="background:'+avColor(p.display_name)+'">'+esc(initials(p.display_name))+'</div>'+cd+
     '</div>'+
     '<div class="badges"><span class="badge dich" title="Prese dichiarate">'+dich+'</span>'+
-      '<span class="badge pts" title="Punti totali">'+p.score+'</span></div>'+
-    '<div class="pname">'+esc(p.display_name)+'</div>'+
+      '<span class="badge taken" title="Prese fatte">'+taken+'</span></div>'+
+    '<div class="pname">'+autoTag+esc(p.display_name)+'</div>'+
   '</div>';
 }
 
@@ -453,7 +524,8 @@ function feltHTML(){
   const round = '<div class="roundinfo">Mano '+(game.round_index+1)+'/'+game.rounds.length+
     ' · '+game.n_cards+' carte'+(game.is_no_trump?' · TRESETTE':'')+'</div>';
   return '<div class="legend"><span><i style="background:var(--dich)"></i>dichiarate</span>'+
-    '<span><i style="background:var(--pts)"></i>punti</span></div>'+
+    '<span><i style="background:var(--pts)"></i>prese fatte</span>'+
+    '<span><i style="background:#3a3f4d"></i>#posizione</span></div>'+
     '<div class="felt"><div class="logo">SALI E SCENDI</div>'+round+centerHTML()+playedHTML(n)+seats+'</div>';
 }
 
@@ -546,8 +618,10 @@ function renderDeclaring(){
   } else {
     action = '<div class="actionbar"><p class="turnmsg">In attesa della dichiarazione di <b>'+esc(nameOf(game.current_turn_seat))+'</b>…</p></div>';
   }
-  app.innerHTML = feltHTML() + myHandHTML(false) + action;
+  app.innerHTML = feltHTML() + myHandHTML(false) + action + gameControlsHTML(false);
   if(myTurn) document.querySelectorAll("[data-decl]").forEach(b=>b.onclick=()=>UI.doDeclare(parseInt(b.dataset.decl,10)));
+  wireGameControls();
+  maybePumpBot();
 }
 
 function renderPlaying(){
@@ -557,14 +631,17 @@ function renderPlaying(){
   const msg = myTurn
     ? '<p class="turnmsg me">Tocca a te'+(leadSeed?' · seme: <b>'+esc(SEED_IT[leadSeed])+'</b>':' · apri la presa')+'</p>'
     : '<p class="turnmsg">Gioca <b>'+esc(nameOf(game.current_turn_seat))+'</b>…</p>';
-  app.innerHTML = feltHTML() + myHandHTML(myTurn, leadSeed) + '<div class="actionbar">'+msg+'</div>';
+  app.innerHTML = feltHTML() + myHandHTML(myTurn, leadSeed) + '<div class="actionbar">'+msg+'</div>' + gameControlsHTML(myTurn);
   if(myTurn) document.querySelectorAll(".card.legal[data-card]").forEach(el=>el.onclick=()=>UI.doPlay(JSON.parse(el.dataset.card)));
+  wireGameControls();
+  maybePumpBot();
 }
 
 function renderTrickDone(){
   const isHost = game.host_user===myUserId;
   app.innerHTML = feltHTML() + myHandHTML(false) +
-    '<div class="actionbar"><p class="waitmsg">'+(isHost?"":"Prossima presa…")+'</p></div>';
+    '<div class="actionbar"><p class="waitmsg">'+(isHost?"":"Prossima presa…")+'</p></div>' + gameControlsHTML(false);
+  wireGameControls();
   // l'host fa avanzare automaticamente (così tutti vedono la presa)
   const key = "trick:"+game.round_index+":"+game.trick_index;
   if(isHost && lastAutoContinue!==key){ lastAutoContinue=key; setTimeout(()=>UI.doContinue(), 2500); }
@@ -611,7 +688,7 @@ function chatLogHTML(){
 function renderChat(){
   const root = document.getElementById("chat");
   if(!root) return;
-  if(!game){ root.className=""; root.innerHTML=""; document.body.classList.remove("has-dock"); return; }
+  if(!game){ root.className=""; root.innerHTML=""; document.body.classList.remove("has-dock","has-dock-collapsed"); return; }
 
   // preserva bozza + focus prima di ricostruire il DOM
   const prev = document.getElementById("chat-text");
@@ -629,21 +706,25 @@ function renderChat(){
         '<button id="chat-send">Invia</button>'+
       '</div>';
     document.body.classList.add("has-dock");
+    document.body.classList.remove("has-dock-collapsed");
   } else {
+    // in partita: dock in fondo, comprimibile, NON sovrapposto (il body riserva
+    // spazio sotto). Tap sull'intestazione per aprire/chiudere.
     const badge = chatUnread>0 ? '<span class="chat-badge">'+(chatUnread>99?"99+":chatUnread)+'</span>' : '';
-    const sheet = chatOpen
-      ? '<div class="chat-sheet">'+
-          '<div class="chat-head">💬 Chat <button id="chat-close" class="chat-x" aria-label="Chiudi">✕</button></div>'+
-          '<div class="chat-log" id="chat-log">'+chatLogHTML()+'</div>'+
+    root.className = "chat-dock ingame" + (chatOpen ? "" : " collapsed");
+    root.innerHTML =
+      '<div class="chat-head" id="chat-toggle" role="button">'+
+        '<span>💬 Chat'+badge+'</span><span class="chat-caret">'+(chatOpen?'▾':'▴')+'</span>'+
+      '</div>'+
+      (chatOpen
+        ? '<div class="chat-log" id="chat-log">'+chatLogHTML()+'</div>'+
           '<div class="chat-input">'+
             '<input id="chat-text" maxlength="300" placeholder="Scrivi un messaggio…" autocomplete="off">'+
             '<button id="chat-send">Invia</button>'+
-          '</div>'+
-        '</div>'
-      : '';
-    root.className = "chat-float";
-    root.innerHTML = '<button class="chat-fab" id="chat-fab" aria-label="Chat">💬'+badge+'</button>'+sheet;
-    document.body.classList.remove("has-dock");
+          '</div>'
+        : '');
+    document.body.classList.add("has-dock");
+    document.body.classList.toggle("has-dock-collapsed", !chatOpen);
   }
 
   // ripristina bozza + focus
@@ -658,10 +739,8 @@ function wireChat(){
   if(send) send.onclick = doSendMessage;
   const text = document.getElementById("chat-text");
   if(text) text.onkeydown = (e)=>{ if(e.key==="Enter"){ e.preventDefault(); doSendMessage(); } };
-  const fab = document.getElementById("chat-fab");
-  if(fab) fab.onclick = ()=>{ chatOpen=true; chatUnread=0; renderChat(); };
-  const close = document.getElementById("chat-close");
-  if(close) close.onclick = ()=>{ chatOpen=false; renderChat(); };
+  const toggle = document.getElementById("chat-toggle");
+  if(toggle) toggle.onclick = ()=>{ chatOpen=!chatOpen; if(chatOpen) chatUnread=0; renderChat(); };
 }
 
 function scrollChatToBottom(){

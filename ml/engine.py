@@ -167,3 +167,63 @@ def auto_pick_declare(other_declares: list[int], n_cards: int, is_last: bool) ->
     if forb == 0:
         return min(1, n_cards)
     return 0
+
+
+# ---------- "TUTTO MIO": verifica di una pretesa (claim) ----------
+def verify_claim_all(hands, claimant, table, turn_seat, num_players,
+                     briscola_seed, hierarchy, node_budget: int = 300_000) -> str:
+    H = {s: list(cs) for s, cs in hands.items()}
+    state = {"budget": node_budget, "exceeded": False}
+
+    def by_strength(cards):
+        return sorted(cards, key=lambda c: card_strength(c.rank, hierarchy))
+
+    def solve(cur_table, turn) -> bool:
+        state["budget"] -= 1
+        if state["budget"] < 0:
+            state["exceeded"] = True
+            return False
+        lead_seed = cur_table[0].card.seed if cur_table else None
+        legal = by_strength(legal_cards(H[turn], lead_seed))
+        is_claimant = (turn == claimant)
+        for card in legal:
+            H[turn].remove(card)
+            new_table = cur_table + [Play(turn, card)]
+            if len(new_table) == num_players:
+                winner = resolve_trick(new_table, briscola_seed, hierarchy)
+                if winner != claimant:
+                    res = False
+                elif len(H[claimant]) == 0:
+                    res = True
+                else:
+                    res = solve([], claimant)
+            else:
+                res = solve(new_table, (turn + 1) % num_players)
+            H[turn].append(card)
+            if state["exceeded"]:
+                return False
+            if is_claimant:
+                if res:
+                    return True
+            else:
+                if not res:
+                    return False
+        return not is_claimant
+
+    ok = solve(list(table), turn_seat)
+    if state["exceeded"]:
+        return "too_complex"
+    return "proven" if ok else "refuted"
+          return False
+            if is_claimant:
+                if res:
+                    return True
+            else:
+                if not res:
+                    return False
+        return not is_claimant
+
+    ok = solve(list(table), turn_seat)
+    if state["exceeded"]:
+        return "too_complex"
+    return "proven" if ok else "refuted"

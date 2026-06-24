@@ -258,3 +258,57 @@ export function botPlay(
   if (want && winners.length > 0) return weakest(winners); // vinco economico
   return weakest(legal);                                    // scarto la più debole
 }
+
+// ---------- "TUTTO MIO": verifica di una pretesa (claim) ----------
+export type ClaimResult = "proven" | "refuted" | "too_complex";
+
+export function verifyClaimAll(
+  hands: Record<number, Card[]>,
+  claimant: number,
+  table: readonly Play[],
+  turnSeat: number,
+  numPlayers: number,
+  briscolaSeed: Seed | null,
+  hierarchy: Hierarchy,
+  nodeBudget = 300_000,
+): ClaimResult {
+  let budget = nodeBudget;
+  let exceeded = false;
+  const H: Record<number, Card[]> = {};
+  for (const k of Object.keys(hands)) H[+k] = hands[+k].slice();
+  const remove = (seat: number, c: Card) => {
+    const arr = H[seat];
+    const i = arr.findIndex((x) => x.seed === c.seed && x.rank === c.rank);
+    if (i >= 0) arr.splice(i, 1);
+  };
+  const restore = (seat: number, c: Card) => { H[seat].push(c); };
+  const byStrength = (cards: Card[]) =>
+    cards.slice().sort((a, b) => cardStrength(a.rank, hierarchy) - cardStrength(b.rank, hierarchy));
+  function solve(curTable: Play[], turn: number): boolean {
+    if (--budget < 0) { exceeded = true; return false; }
+    const leadSeed: Seed | null = curTable.length ? curTable[0].card.seed : null;
+    const legal = byStrength(legalCards(H[turn], leadSeed));
+    const isClaimant = turn === claimant;
+    for (const card of legal) {
+      remove(turn, card);
+      const newTable = [...curTable, { seat: turn, card }];
+      let res: boolean;
+      if (newTable.length === numPlayers) {
+        const winner = resolveTrick(newTable, briscolaSeed, hierarchy);
+        if (winner !== claimant) res = false;
+        else if (H[claimant].length === 0) res = true;
+        else res = solve([], claimant);
+      } else {
+        res = solve(newTable, (turn + 1) % numPlayers);
+      }
+      restore(turn, card);
+      if (exceeded) return false;
+      if (isClaimant) { if (res) return true; }
+      else { if (!res) return false; }
+    }
+    return !isClaimant;
+  }
+  const ok = solve(table.slice(), turnSeat);
+  if (exceeded) return "too_complex";
+  return ok ? "proven" : "refuted";
+}
