@@ -31,6 +31,13 @@ Le mani, **private** (RLS: ognuno vede solo la propria). `game_id`,
 Riepilogo punti di ogni round (pubblico ai membri). `id`, `game_id`,
 `round_index`, `seat`, `declared`, `taken`, `points`, `created_at`.
 
+### `public.profiles` (migration 005)
+Un profilo per account: `id`→auth.users (cascade), `nickname` (unique
+case-insensitive su `lower(nickname)`, 3–20 caratteri), `created_at`. Scritta
+**solo dal trigger** `on_auth_user_created` alla registrazione (nickname da
+`raw_user_meta_data->>'nickname'`). RLS: SELECT per `anon`+`authenticated`
+(serve al pre-check di disponibilità prima del login). **No realtime.**
+
 **Sicurezza:** RLS attiva su tutte; solo policy di SELECT per i client; scrittura
 via service_role. Realtime attivo su tutte e quattro le tabelle.
 

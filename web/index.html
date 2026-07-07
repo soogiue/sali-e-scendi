@@ -287,10 +287,13 @@ function avColor(name){
   }
   supabase = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
   // il link "recupero password" riapre l'app con un token: supabase-js lo
-  // processa e emette PASSWORD_RECOVERY → vista "nuova password"
-  supabase.auth.onAuthStateChange((event)=>{ if(event==="PASSWORD_RECOVERY") renderRecovery(); });
+  // processa e emette PASSWORD_RECOVERY (durante getSession) → vista "nuova password".
+  // Il flag evita che startAuthedApp sovrascriva subito la vista col render della home.
+  let inRecovery = false;
+  supabase.auth.onAuthStateChange((event)=>{ if(event==="PASSWORD_RECOVERY"){ inRecovery = true; renderRecovery(); } });
   setInterval(tickTimer, 200); // timer del turno (lato client)
   const { data:{ session } } = await supabase.auth.getSession();
+  if(inRecovery) return;
   if(!session){ renderAuth(); return; }
   await startAuthedApp(session);
 })();
@@ -567,7 +570,7 @@ function mapAuthError(msg){
   if(m.indexOf("Invalid login credentials")>=0) return "Email o password sbagliata";
   if(m.indexOf("User already registered")>=0) return "Email già registrata";
   if(m.indexOf("Database error saving new user")>=0) return "Nickname già in uso, provane un altro";
-  if(m.toLowerCase().indexOf("password")>=0 && m.indexOf("6")>=0) return "La password deve avere almeno 6 caratteri";
+  if(m.indexOf("Password should be at least")>=0) return "La password deve avere almeno 6 caratteri";
   return m;
 }
 
