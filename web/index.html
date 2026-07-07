@@ -308,17 +308,13 @@ async function invoke(action, payload){
 
 // ---- azioni ----
 async function doCreate(){
-  const name = (document.getElementById("nm").value||"").trim();
-  if(!name){ showError("Inserisci il tuo nome"); document.getElementById("nm").focus(); return; }
-  const res = await invoke("create_game", { displayName:name });
+  const res = await invoke("create_game", {});
   if(res){ gameId=res.gameId; myCode=res.code; mySeat=res.seat; await enterGame(); }
 }
 async function doJoin(){
-  const name = (document.getElementById("nm").value||"").trim();
-  if(!name){ showError("Inserisci il tuo nome"); document.getElementById("nm").focus(); return; }
   const code = (document.getElementById("code").value||"").trim().toUpperCase();
   if(code.length<4){ showError("Inserisci il codice stanza"); return; }
-  const res = await invoke("join_game", { code, displayName:name });
+  const res = await invoke("join_game", { code });
   if(res){ gameId=res.gameId; myCode=res.code; mySeat=res.seat; await enterGame(); }
 }
 async function doStart(){ await invoke("start_game", { gameId }); }
@@ -669,13 +665,12 @@ async function doLogout(){
 function renderHome(){
   game=null;
   app.innerHTML =
-  '<h1>🂡 Sali e Scendi</h1><p class="sub">Gioca online con gli amici, ognuno sul suo telefono</p>'+
-  '<div class="panel"><label>Il tuo nome <span style="opacity:.7">(obbligatorio)</span></label>'+
-    '<input id="nm" maxlength="14" placeholder="Es. Gio" required>'+
-    '<button onclick="UI.doCreate()">Crea una stanza</button></div>'+
+  '<h1>🂡 Sali e Scendi</h1><p class="sub">Ciao, <b style="color:var(--gold)">'+esc(myNickname||"?")+'</b> — gioca online con gli amici</p>'+
+  '<div class="panel"><button onclick="UI.doCreate()">Crea una stanza</button></div>'+
   '<div class="panel"><label>Oppure entra con un codice</label>'+
     '<input id="code" class="code" maxlength="4" placeholder="ABCD">'+
-    '<button class="ghost" onclick="UI.doJoin()">Entra nella stanza</button></div>';
+    '<button class="ghost" onclick="UI.doJoin()">Entra nella stanza</button></div>'+
+  '<p class="tiny" style="text-align:center;margin-top:14px"><a href="#" style="color:inherit;opacity:.7" onclick="UI.doLogout();return false">Esci</a></p>';
 }
 
 function renderWaiting(){
