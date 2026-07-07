@@ -5,6 +5,24 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ## Migration applicate
 
+### ⏳ 005_profiles
+- **Stato:** PENDING (creata, da applicare su Supabase)
+- **Creata:** 2026-07-07
+- **Autore:** soogiue
+- **Descrizione:** Nuova tabella `public.profiles` (nickname unico
+  case-insensitive, 3–20 caratteri) creata da un trigger su `auth.users` alla
+  registrazione; RLS di SELECT pubblica (serve al check di disponibilità
+  pre-signup).
+- **Schemi aggiunti:** nessuno
+- **Tabelle:** public.profiles
+- **Breaking:** SÌ — `create_game`/`join_game` leggono il nickname da
+  `profiles`: migration, function e client vanno deployati insieme; login
+  anonimo dismesso (Anonymous sign-ins OFF nel dashboard).
+- **Scopo:** Account veri (email+password) e identità stabile per lo storico
+  e le statistiche per account (sub-progetto B).
+
+---
+
 ### ⏳ 004_autoplay
 - **Stato:** PENDING (creata, da applicare su Supabase)
 - **Creata:** 2026-06-24

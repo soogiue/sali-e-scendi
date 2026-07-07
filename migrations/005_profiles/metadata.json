@@ -1,0 +1,14 @@
+{
+  "version": "005_profiles",
+  "description": "Add public.profiles (unique case-insensitive nickname) created by a trigger on auth.users signup; public SELECT RLS for pre-signup availability check",
+  "author": "soogiue",
+  "created_at": "2026-07-07",
+  "applied_at": null,
+  "status": "pending",
+  "breaking": true,
+  "schemas_added": [],
+  "tables_affected": ["public.profiles"],
+  "views_added": [],
+  "reason": "Account veri (email+password) al posto del login anonimo; il nickname unico e la base per storico e statistiche per account",
+  "notes": "Il profilo lo crea il trigger handle_new_user (nickname nei metadata del signUp). Nessuna policy di scrittura client. BREAKING: create_game/join_game leggono il nickname da profiles, quindi client e function vanno deployati insieme a questa migration; gli account anonimi esistenti smettono di funzionare (vanno disabilitati gli Anonymous sign-ins nel dashboard)."
+}
