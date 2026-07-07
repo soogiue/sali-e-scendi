@@ -626,6 +626,8 @@ async function doSignup(){
   if(taken){ showError("Nickname già in uso, provane un altro"); return; }
   const { data, error } = await supabase.auth.signUp({ email, password: pass, options:{ data:{ nickname: nick } } });
   if(error){ showError(mapAuthError(error.message)); return; }
+  // se "Confirm email" fosse (per sbaglio) attivo nel dashboard, niente sessione:
+  if(!data.session){ showError("Controlla la tua email per confermare la registrazione"); return; }
   await startAuthedApp(data.session);
 }
 
