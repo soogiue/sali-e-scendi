@@ -249,6 +249,9 @@ async function continueAfter(db: any, userId: string, body: any) {
       await H.logGameFinished(db, game.id, winnerSeat, (players ?? []).map((p: any) => ({
         seat: p.seat, user_id: p.user_id, display_name: p.display_name, score: p.score,
       })));
+
+      // i bot sfottono l'ultimo / esultano se vincono
+      await trashAtGameEnd(db, game, players ?? []);
     }
     return json({ ok: true });
   }
@@ -379,6 +382,126 @@ async function systemChat(db: any, game: any, seat: number, name: string, text: 
   }).then(() => {}, () => {});  // best-effort: una notifica non deve mai bloccare l'azione
 }
 
+// ================= TRASHTALKING DEI BOT (sfottò tra amici) =================
+// Interruttore: metti false per spegnere tutto.
+const TRASH_TALK = true;
+
+// Battute (italiano, tono pesante da amici). Placeholder: {name} {d} {t}.
+const TRASH = {
+  whiff: [
+    "ahahah {name} sei un coglione, chiami {d} e ne fai {t} 😂",
+    "{name} ma che cazzo chiami {d}?? ne fai {t}, una pippa",
+    "bravo {name}: {d} dichiarate, {t} portate a casa. Fenomeno 💀",
+    "{name} loool {d}?? ma giochi col culo?",
+    "guardate {name}: {d} chiamate e {t} fatte 😂😂",
+    "{name} che giocatore di merda, manco {d} prese sai fare",
+    "{name} {d} chiamate ahahah ma sei negato proprio",
+  ],
+  zero: [
+    "{name} ZERO prese ahahah ma vai a giocare a briscola va",
+    "cappotto per {name} 💀 {d} chiamate e ZERO fatte, imbarazzante",
+    "{name} ne hai fatte ZERO?? ma che ci sei venuto a fare 😂",
+  ],
+  over: [
+    "{name} ne fai {t} e ne chiami {d}... impara a contare coglione 😂",
+    "{name} {t} prese ma ne avevi dette {d}, ma che giochi a fare a caso?",
+  ],
+  loser: [
+    "{name} ULTIMO. Come sempre del resto 💀",
+    "complimenti {name}, ultimo posto, sei una pippa pazzesca 😂",
+    "{name} hai perso pure stavolta, che tristezza ahahah",
+    "{name} ultimo 🥱 ma lascia perdere ste carte va",
+  ],
+  gloat: [
+    "ve l'avevo detto che vincevo io, umani scarsi 😎",
+    "GG facile, tornate quando sapete giocare 😂",
+    "vinco io come al solito, che noia battervi 🤖",
+  ],
+  claimFail: [
+    "{name} TUTTO MIO un cazzo ahahah te le sei sognate le prese 💀",
+    "ahahah {name} 'tutto mio' e non prende una sega, che figura",
+    "{name} ma chi ti credi di essere, TUTTO MIO 😂 sei scarso",
+  ],
+  steal: [
+    "{name} scemo coglione 💀",
+    "{name} coglione 😂",
+    "ahah {name} che scarso",
+    "{name} pippa 💀",
+    "{name} sei scarso coglione",
+  ],
+};
+
+const tpick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+const tfmt = (tpl: string, v: Record<string, any>) =>
+  tpl.replace(/\{(\w+)\}/g, (_m, k) => String(v[k] ?? ""));
+
+// Posta un messaggio di chat COME un bot specifico (col suo nome/posto reali).
+async function botChat(db: any, game: any, bot: any, text: string) {
+  await db.from("chat_messages").insert({
+    game_id: game.id, user_id: bot.user_id, seat: bot.seat,
+    display_name: bot.display_name, body: text,
+  }).then(() => {}, () => {});
+}
+
+// Sceglie un bot a caso che faccia da "bocca" (diverso dal bersaglio).
+function pickSpeakerBot(players: any[], excludeSeat: number) {
+  const bots = (players ?? []).filter((p) => p.is_bot && p.seat !== excludeSeat);
+  return bots.length ? bots[Math.floor(Math.random() * bots.length)] : null;
+}
+
+// Fine mano: un bot sfotte chi ha sbagliato di più la dichiarazione (preferendo gli umani).
+async function trashAfterRound(db: any, game: any, players: any[], outcomeRows: any[]) {
+  if (!TRASH_TALK) return;
+  if (!players.some((p) => p.is_bot)) return;
+  if (Math.random() > 0.65) return;                       // non a ogni mano
+  const bySeat = new Map(players.map((p) => [p.seat, p]));
+  const misses = outcomeRows.filter((o) => o.declared !== o.taken);
+  if (!misses.length) return;
+  const humanMisses = misses.filter((o) => !bySeat.get(o.seat)?.is_bot);
+  const pool = humanMisses.length ? humanMisses : misses;
+  pool.sort((a, b) => Math.abs(b.declared - b.taken) - Math.abs(a.declared - a.taken));
+  const target = pool[0];
+  const tp = bySeat.get(target.seat);
+  const speaker = pickSpeakerBot(players, target.seat);
+  if (!speaker || !tp) return;
+  const vars = { name: tp.display_name, d: target.declared, t: target.taken };
+  const line = (target.taken === 0 && target.declared > 0)
+    ? tfmt(tpick(TRASH.zero), vars)
+    : (target.taken > target.declared ? tfmt(tpick(TRASH.over), vars) : tfmt(tpick(TRASH.whiff), vars));
+  await botChat(db, game, speaker, line);
+}
+
+// Fine partita: sfottò all'ultimo in classifica + gloat se vince un bot.
+async function trashAtGameEnd(db: any, game: any, players: any[]) {
+  if (!TRASH_TALK) return;
+  if (!players.some((p) => p.is_bot)) return;
+  const sorted = players.slice().sort((a, b) => a.score - b.score);
+  const last = sorted[0];
+  const winner = sorted[sorted.length - 1];
+  const speaker = pickSpeakerBot(players, last.seat);
+  if (speaker && !last.is_bot) {
+    await botChat(db, game, speaker, tfmt(tpick(TRASH.loser), { name: last.display_name }));
+  }
+  if (winner.is_bot) await botChat(db, game, winner, tpick(TRASH.gloat));
+}
+
+// Presa rubata: ogni tanto, quando un bot vince una presa con un umano dentro.
+async function trashStolenTrick(db: any, game: any, newPlays: E.Play[], winnerSeat: number) {
+  if (!TRASH_TALK) return;
+  if (Math.random() > 0.2) return;                        // raramente, niente spam
+  const { data: players } = await db.from("game_players")
+    .select("seat,user_id,display_name,is_bot").eq("game_id", game.id);
+  const bySeat = new Map((players ?? []).map((p: any) => [p.seat, p]));
+  const win = bySeat.get(winnerSeat) as any;
+  if (!win || !win.is_bot) return;
+  const humans = newPlays
+    .map((pl) => bySeat.get(pl.seat) as any)
+    .filter((p) => p && !p.is_bot && p.seat !== winnerSeat);
+  if (!humans.length) return;
+  const target = humans[Math.floor(Math.random() * humans.length)];
+  await botChat(db, game, win, tfmt(tpick(TRASH.steal), { name: target.display_name }));
+}
+
 // AUTOGAME: un giocatore delega (o riprende) il proprio posto al bot ML. Reversibile.
 async function toggleAutoplay(db: any, userId: string, body: any) {
   const { game, me } = await loadGameAndPlayer(db, body.gameId, userId);
@@ -459,6 +582,13 @@ async function claimAll(db: any, userId: string, body: any) {
       .eq("game_id", game.id).eq("seat", me.seat);
     await systemChat(db, game, me.seat, me.display_name,
       "❌ TUTTO MIO sbagliato! Non prenderebbe tutto: penalità −" + penalty + ". Si continua.");
+    // un bot infierisce sul TUTTO MIO fallito
+    if (TRASH_TALK) {
+      const { data: pls } = await db.from("game_players")
+        .select("seat,user_id,display_name,is_bot").eq("game_id", game.id);
+      const speaker = pickSpeakerBot(pls ?? [], me.seat);
+      if (speaker) await botChat(db, game, speaker, tfmt(tpick(TRASH.claimFail), { name: me.display_name }));
+    }
     return json({ ok: true, verdict, penalty });
   }
 
@@ -627,6 +757,9 @@ async function applyPlay(db: any, gameSnap: any, seat: number, card: E.Card, han
     turn_deadline: null,
   }).eq("id", game.id);
 
+  // ogni tanto un bot punzecchia l'umano a cui ha rubato la presa
+  await trashStolenTrick(db, game, newPlays, winner);
+
   return { trickWinner: winner };
 }
 
@@ -739,4 +872,7 @@ async function scoreRoundDB(db: any, game: any) {
   }
 
   await H.logRoundOutcomes(db, game, outcomeRows);
+
+  // i bot sfottono chi ha sbagliato la dichiarazione
+  await trashAfterRound(db, game, players ?? [], outcomeRows);
 }
