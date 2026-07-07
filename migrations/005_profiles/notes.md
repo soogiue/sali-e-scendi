@@ -10,6 +10,9 @@
 - RLS: SELECT per `anon` e `authenticated` (i nickname sono pubblici; il check di
   disponibilita avviene PRIMA del login). Nessuna policy di scrittura: scrive
   solo il trigger.
+- ⚠️ Eventuali provider futuri (OAuth, magic link, phone) devono passare
+  `nickname` in `raw_user_meta_data`, altrimenti il trigger blocca la loro
+  registrazione.
 
 ## Perche breaking
 
