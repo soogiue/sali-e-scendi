@@ -89,10 +89,11 @@ Deno.serve(async (req) => {
 
 // ---------------- AZIONI ----------------
 
-// Il nome del giocatore viene SEMPRE dal profilo (identita non falsificabile).
+// Il nome del giocatore viene SEMPRE dal profilo (identità non falsificabile).
 async function nicknameOf(db: any, userId: string): Promise<string | null> {
-  const { data } = await db.from("profiles").select("nickname")
+  const { data, error } = await db.from("profiles").select("nickname")
     .eq("id", userId).maybeSingle();
+  if (error) throw error; // errore vero di query → 500 dal handler top-level
   return data?.nickname ?? null;
 }
 
@@ -129,7 +130,7 @@ async function joinGame(db: any, userId: string, body: any) {
 
   const { data: players } = await db.from("game_players")
     .select("*").eq("game_id", game.id).order("seat");
-  // già dentro? (aggiorna comunque il nome scelto)
+  // già dentro? (aggiorna il nome dal profilo)
   const mine = (players ?? []).find((p: any) => p.user_id === userId);
   if (mine) {
     await db.from("game_players").update({ display_name: displayName })
