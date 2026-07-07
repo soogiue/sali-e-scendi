@@ -7,7 +7,7 @@ Riassunto di cosa creerai:
 
 1. Un **progetto Supabase** (gratis).
 2. Le **tabelle + sicurezza + realtime** (1 file SQL da incollare).
-3. Il **login anonimo** (un interruttore da attivare).
+3. Il **login con account** (email+password, due interruttori).
 4. La **Edge Function** `game` (il server che valida le mosse).
 5. La **configurazione del frontend** (2 valori da incollare).
 6. La **pubblicazione online** (trascinare una cartella).
@@ -28,12 +28,13 @@ Riassunto di cosa creerai:
 
 Questo crea le tabelle `games`, `game_players`, `hands`, `round_results`, le **policy di sicurezza** (ognuno vede solo la propria mano) e attiva il **realtime**.
 
-## 3) Attiva il login anonimo
+## 3) Configura il login con account
 
-Gli amici devono poter entrare senza registrarsi.
-
-1. Menu a sinistra: **Authentication** → **Sign In / Providers** (o **Providers**).
-2. Trova **Anonymous sign-ins** e **attivalo** (Enable). Salva.
+1. Nel menu: **Authentication → Providers → Email**: attivo, con **"Confirm email" OFF**
+   (registrazione → si gioca subito, niente attesa della mail).
+2. **Authentication → Providers → Anonymous sign-ins**: **OFF** (dalla v1.2 non serve più).
+3. **Authentication → URL Configuration → Redirect URLs**: aggiungi l'URL dove pubblicherai
+   l'app (serve al link "Password dimenticata?"; puoi tornare a farlo dopo il passo 6).
 
 ## 4) Pubblica la Edge Function `game`
 
@@ -90,14 +91,14 @@ Poi apri il link sul telefono, "Aggiungi a schermata Home" per averlo come un'ap
 
 - [ ] Progetto Supabase (region EU)
 - [ ] `db/setup.sql` eseguito (tabelle + RLS + realtime)
-- [ ] Login anonimo attivato
+- [ ] Login con account configurato (Email ON, conferma email OFF, anonimo OFF)
 - [ ] Edge Function `game` pubblicata
 - [ ] `web/config.js` compilato (URL + anon key)
 - [ ] Frontend pubblicato (Netlify/Vercel/…)
 
 ## Problemi comuni
 
-- **"Non autenticato"** → il login anonimo non è attivo (passo 3).
+- **"Non autenticato"** → non hai fatto login, o il provider Email non è configurato (passo 3).
 - **"Azione sconosciuta" / errori function** → la function non è stata caricata o è in errore: `supabase functions logs game`.
 - **Le carte non si vedono** → assicurati che la cartella `web/cards/` esista (è già inclusa) o aggiusta `CARD_BASE` in `config.js`.
 - **Non aggiorna in tempo reale** → ricontrolla che `db/setup.sql` sia stato eseguito tutto (è lì che si attiva il realtime).
@@ -108,13 +109,7 @@ Poi apri il link sul telefono, "Aggiungi a schermata Home" per averlo come un'ap
 ## Account (v1.2) — passi nel dashboard Supabase
 
 Dalla v1.2 il login anonimo è dismesso: si gioca con account email+password e
-nickname unico. Tre passi una-tantum nel dashboard:
-
-1. **Authentication → Providers → Email:** ON, con **"Confirm email" OFF**
-   (registrazione → si gioca subito, niente attesa della mail).
-2. **Authentication → Providers → Anonymous sign-ins:** **OFF**.
-3. **Authentication → URL Configuration → Redirect URLs:** aggiungi l'URL dove
-   pubblichi l'app (serve al link "Password dimenticata?").
+nickname unico. I toggle del dashboard sono descritti al **passo 3** della guida qui sopra.
 
 Poi, in ordine: esegui `migrations/005_profiles/up.sql` nel SQL Editor (le
 installazioni nuove hanno già tutto in `db/setup.sql`), ri-pubblica la function
