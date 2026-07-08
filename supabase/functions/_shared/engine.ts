@@ -52,11 +52,13 @@ export function maxCardsFor(numPlayers: number): number {
   return Math.floor(40 / numPlayers); // 4->10, 5->8
 }
 
-// Sequenza dei round: [1..max, max..1] (il picco compare due volte)
-export function roundsSequence(maxCards: number): number[] {
+// Sequenza dei round: [start..max, max..start] (il picco compare due volte).
+// startCards ha default 1 (comportamento storico) e viene clampato a 1..max.
+export function roundsSequence(maxCards: number, startCards = 1): number[] {
+  const from = Math.min(Math.max(1, startCards), maxCards);
   const seq: number[] = [];
-  for (let i = 1; i <= maxCards; i++) seq.push(i);
-  for (let i = maxCards; i >= 1; i--) seq.push(i);
+  for (let i = from; i <= maxCards; i++) seq.push(i);
+  for (let i = maxCards; i >= from; i--) seq.push(i);
   return seq;
 }
 
