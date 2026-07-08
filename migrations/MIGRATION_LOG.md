@@ -5,6 +5,20 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ## Migration applicate
 
+### ⏳ 007_start_cards
+- **Stato:** PENDING (creata, da applicare su Supabase)
+- **Creata:** 2026-07-08
+- **Autore:** soogiue
+- **Descrizione:** Colonna `public.games.start_cards` (int, default 1,
+  check 1–10): da quante carte parte la sequenza dei round, scelta dall'host
+  in lobby (azione `set_start_cards`), clampata al picco in `start_game`.
+- **Schemi aggiunti:** nessuno
+- **Tabelle:** public.games (+start_cards)
+- **Breaking:** No — default 1 = comportamento storico.
+- **Scopo:** Partite più corte a scelta dell'host (es. 4 → picco → 4).
+
+---
+
 ### ⏳ 006_stats
 - **Stato:** PENDING (creata, da applicare su Supabase)
 - **Creata:** 2026-07-08

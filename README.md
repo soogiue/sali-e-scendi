@@ -35,7 +35,7 @@ sali-e-scendi-online/
 
 ## Regole implementate
 
-4 giocatori → 10 carte al picco · 5 → 8 · round 1…picco…1 · briscola (gerarchia Asso,3,Re,Cavallo,Fante,7…)
+4 giocatori → 10 carte al picco · 5 → 8 · round 1…picco…1 (o partenza scelta dall'host, v1.4) · briscola (gerarchia Asso,3,Re,Cavallo,Fante,7…)
 · picco senza briscola (tresette: 3,2,Asso,Re,…) · obbligo di rispondere al seme (no taglio obbligatorio)
 · primo di mano = dopo il mazziere, senso orario · punti: +1+prese se indovini, −differenza se sbagli
 · l'ultimo a dichiarare non può far combaciare la somma con le prese del round.
@@ -73,3 +73,12 @@ sali-e-scendi-online/
 
 > ⚠️ Per attivarla: esegui `migrations/006_stats/up.sql` (dopo la 001 e la 005)
 > e ri-pubblica il frontend. La function di gioco non cambia.
+
+## Novità (v1.4)
+
+- **Partite più corte**: in lobby l'host sceglie **da quante carte si parte**
+  (es. 4 → 10 → 4 invece di 1 → 10 → 1). Il picco resta automatico dal numero
+  di giocatori; tutti vedono la scelta in tempo reale. Default: 1 (come prima).
+
+> ⚠️ Per attivarla: esegui `migrations/007_start_cards/up.sql`, ri-pubblica la
+> function (`supabase functions deploy game`) e il frontend.

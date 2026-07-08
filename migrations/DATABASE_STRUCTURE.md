@@ -11,7 +11,7 @@ RLS). I client possono solo **leggere**, e ognuno vede solo la propria mano.
 ### `public.games`
 Una partita / stanza. Colonne principali: `id`, `code` (unique), `status`
 (`lobby`|`playing`|`finished`), `host_user`, `num_players`, `max_cards`,
-`rounds int[]`, `round_index`, `phase`, `n_cards`, `dealer_seat`,
+`rounds int[]`, `start_cards int` (migration 007: partenza scelta dall'host), `round_index`, `phase`, `n_cards`, `dealer_seat`,
 `current_turn_seat`, `briscola jsonb`, `is_no_trump`, `trick_index`,
 `trick_lead_seat`, `trick_plays jsonb`, `last_trick_winner`, `winner_seat`,
 `created_at`, `updated_at`.

@@ -327,6 +327,7 @@ async function doDeclare(v){ await invoke("declare", { gameId, value:v }); }
 async function doPlay(card){ await invoke("play_card", { gameId, card }); }
 async function doContinue(){ await invoke("continue", { gameId }); }
 async function doSetBots(count){ await invoke("set_bots", { gameId, count }); }
+async function doSetStartCards(v){ await invoke("set_start_cards", { gameId, value:v }); }
 async function doToggleAutoplay(){
   const me = players.find(p=>p.seat===mySeat);
   const turningOn = !(me && me.autoplay);
@@ -339,7 +340,7 @@ async function doClaimAll(){
 }
 async function doAdvanceBot(){ await invoke("advance_bot", { gameId }); }
 
-window.UI = { doCreate, doJoin, doStart, doDeclare, doPlay, doContinue, doSetBots, doToggleAutoplay, doClaimAll,
+window.UI = { doCreate, doJoin, doStart, doDeclare, doPlay, doContinue, doSetBots, doSetStartCards, doToggleAutoplay, doClaimAll,
               authTab, doLogin, doSignup, doSendReset, doRecover, doLogout,
               openStats, statsGo, closeStats };
 
@@ -765,7 +766,16 @@ function renderWaiting(){
   const n = players.length;
   const maxBots = 5 - humans;
 
+  // picco previsto: col tavolo incompleto (<4) si assume 4 giocatori (picco 10)
+  const peak = Math.floor(40 / Math.max(4, n));
+  const startRaw = game.start_cards || 1;
+  const start = Math.min(startRaw, peak);           // specchio del clamp server
+  const hands = 2 * (peak - start + 1);
+  const roundLine = '<p class="tiny" style="margin-top:10px">Round: <b style="color:var(--gold)">'+
+    start+' → '+peak+' → '+start+'</b> ('+hands+' mani)</p>';
+
   let botCtrl = "";
+  let startCtrl = "";
   if(isHost){
     let btns="";
     for(let k=0;k<=maxBots;k++){
@@ -773,6 +783,13 @@ function renderWaiting(){
     }
     botCtrl = '<p class="tiny" style="margin-top:12px">Aggiungi bot 🤖 (per riempire i posti)</p>'+
       '<div style="display:flex;flex-wrap:wrap;justify-content:center">'+btns+'</div>';
+
+    let sbtns="";
+    for(let k=1;k<=peak;k++){
+      sbtns+='<button class="'+(k===start?'':'ghost')+'" style="width:auto;margin:0 4px 4px 0;padding:8px 12px" data-startc="'+k+'">'+k+'</button>';
+    }
+    startCtrl = '<p class="tiny" style="margin-top:12px">Parti da 🃏 (1 = partita completa)</p>'+
+      '<div style="display:flex;flex-wrap:wrap;justify-content:center">'+sbtns+'</div>';
   }
 
   app.innerHTML =
@@ -781,6 +798,8 @@ function renderWaiting(){
     '<p class="tiny">Giocatori ('+n+'/5):</p><div class="scores" style="justify-content:center">'+
     players.map(p=>'<span class="chip">'+esc(p.display_name)+
       (p.user_id===game.host_user?" 👑":"")+(p.is_bot?" 🤖":"")+'</span>').join("")+'</div>'+
+    roundLine+
+    startCtrl+
     botCtrl+
     (isHost
       ? (n>=4 ? '<button onclick="UI.doStart()">Inizia partita ('+n+' giocatori)</button>'
@@ -790,6 +809,8 @@ function renderWaiting(){
 
   if(isHost) document.querySelectorAll("[data-bots]")
     .forEach(b=>b.onclick=()=>UI.doSetBots(parseInt(b.dataset.bots,10)));
+  if(isHost) document.querySelectorAll("[data-startc]")
+    .forEach(b=>b.onclick=()=>UI.doSetStartCards(parseInt(b.dataset.startc,10)));
 }
 
 function renderDeclaring(){
