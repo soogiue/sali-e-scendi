@@ -1,0 +1,14 @@
+{
+  "version": "006_stats",
+  "description": "Add RPC functions get_my_stats, get_my_history, get_leaderboard (security definer readers over the history schema, granted to authenticated only)",
+  "author": "soogiue",
+  "created_at": "2026-07-08",
+  "applied_at": null,
+  "status": "pending",
+  "breaking": false,
+  "schemas_added": [],
+  "tables_affected": [],
+  "views_added": [],
+  "reason": "Statistiche personali, storico partite e classifica per la schermata 📊 del client",
+  "notes": "Solo funzioni di lettura: nessuna tabella nuova, nessun nuovo logging (history.* è già scritto dalla edge function). auth.uid() dentro le funzioni: nessun parametro falsificabile. Lo schema history resta senza policy di SELECT per i client. Richiede 001 (history) e 005 (profiles). I bot (user_id sintetici, senza profilo) sono esclusi."
+}
