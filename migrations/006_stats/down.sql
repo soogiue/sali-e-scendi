@@ -3,10 +3,11 @@
 -- (le funzioni leggono soltanto): il client mostrerà "Errore statistiche".
 -- ============================================================
 
--- STEP 1: FUNZIONI
+-- STEP 1: FUNZIONI + INDICE
 drop function if exists public.get_my_stats();
 drop function if exists public.get_my_history(int);
 drop function if exists public.get_leaderboard();
+drop index if exists history.idx_hist_outcomes_user;
 
 -- STEP 2: LOG DEL ROLLBACK
 insert into internal.schema_migrations_rollback (version, rolled_back_by, rolled_back_at)

@@ -67,10 +67,11 @@ set search_path = public, history
 as $$
   select hg.finished_at, hg.num_players,
          hp.final_score, hp.final_rank,
-         w.display_name
+         (select w.display_name from history.players w
+          where w.game_log_id = hp.game_log_id and w.final_rank = 1
+          limit 1)  -- subquery scalare: niente fan-out se due giocatori pareggiano al rank 1
   from history.players hp
   join history.games hg on hg.id = hp.game_log_id
-  left join history.players w on w.game_log_id = hp.game_log_id and w.final_rank = 1
   where hp.user_id = auth.uid() and hg.status = 'finished'
   order by hg.finished_at desc
   limit least(greatest(coalesce(p_limit, 20), 1), 50);
@@ -87,17 +88,23 @@ returns table (
 language sql stable security definer
 set search_path = public, history
 as $$
-  select p.nickname,
-         count(*)::int,
-         (count(*) filter (where hp.final_rank = 1))::int,
-         round(100.0 * (count(*) filter (where hp.final_rank = 1)) / count(*), 1),
-         round(avg(hp.final_score), 1)
+  select p.nickname as nickname,
+         count(*)::int as games,
+         (count(*) filter (where hp.final_rank = 1))::int as wins,
+         round(100.0 * (count(*) filter (where hp.final_rank = 1)) / count(*), 1) as win_rate,
+         round(avg(hp.final_score), 1) as avg_score
   from public.profiles p
   join history.players hp on hp.user_id = p.id
   join history.games hg on hg.id = hp.game_log_id and hg.status = 'finished'
   group by p.id, p.nickname
-  order by 3 desc, 4 desc, 1 asc;
+  order by wins desc, win_rate desc, nickname asc;
 $$;
+
+-- ------------------------------------------------------------
+-- INDICE: round_outcomes cresce come giocatori × round × partite,
+-- e get_my_stats la filtra per user_id (001 indicizza solo round_log_id).
+-- ------------------------------------------------------------
+create index if not exists idx_hist_outcomes_user on history.round_outcomes(user_id);
 
 -- ------------------------------------------------------------
 -- PERMESSI: solo utenti loggati. (Le funzioni nascono con EXECUTE
