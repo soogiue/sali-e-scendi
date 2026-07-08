@@ -5,6 +5,23 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ## Migration applicate
 
+### ⏳ 006_stats
+- **Stato:** PENDING (creata, da applicare su Supabase)
+- **Creata:** 2026-07-08
+- **Autore:** soogiue
+- **Descrizione:** Tre funzioni RPC `security definer` per la schermata 📊:
+  `get_my_stats()`, `get_my_history(p_limit)`, `get_leaderboard()`. Solo
+  lettura di `history.*` + `public.profiles`; execute ai soli `authenticated`.
+- **Schemi aggiunti:** nessuno
+- **Tabelle:** nessuna (solo funzioni)
+- **Breaking:** No — solo aggiunte; il client senza migration mostra un
+  errore aprendo 📊, il gioco non è toccato.
+- **Scopo:** Statistiche personali, storico partite e classifica per account.
+- **Note:** Richiede 001 (history) e 005 (profiles). Lo schema `history`
+  resta chiuso ai client; i bot restano esclusi.
+
+---
+
 ### ⏳ 005_profiles
 - **Stato:** PENDING (creata, da applicare su Supabase)
 - **Creata:** 2026-07-07
