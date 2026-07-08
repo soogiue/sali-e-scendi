@@ -62,3 +62,14 @@ sali-e-scendi-online/
 > ⚠️ Se avevi il setup della v1.1: esegui `migrations/005_profiles/up.sql`,
 > ri-pubblica la function e il frontend, e sistema i 3 toggle del dashboard
 > descritti in SETUP.md (sezione "Account (v1.2)").
+
+## Novità (v1.3)
+
+- **📊 Statistiche** dalla home: le tue medie (partite, vittorie, win rate,
+  precisione dichiarazioni), lo **storico** delle partite concluse e la
+  **classifica** di tutti i giocatori (vinte, poi win rate). I bot sono esclusi.
+- I numeri partono dalle partite concluse **dopo** l'attivazione del logging
+  (migration 001): niente retroattività.
+
+> ⚠️ Per attivarla: esegui `migrations/006_stats/up.sql` (dopo la 001 e la 005)
+> e ri-pubblica il frontend. La function di gioco non cambia.
