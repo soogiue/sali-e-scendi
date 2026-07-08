@@ -255,6 +255,8 @@ let chatOpen = true;       // chat in partita: parte APERTA (dock comprimibile i
 let chatUnread = 0;        // contatore non letti (badge in partita)
 let authMode = "login";   // "login" | "signup" | "reset"
 let myNickname = "";
+let statsTab = "me";      // "me" | "history" | "board"
+let statsCache = null;    // { me, history, board } caricati a ogni apertura
 
 // ---- helpers regole (solo per la UI; il server è autoritativo) ----
 function legalForUI(hand, leadSeed){
@@ -338,7 +340,8 @@ async function doClaimAll(){
 async function doAdvanceBot(){ await invoke("advance_bot", { gameId }); }
 
 window.UI = { doCreate, doJoin, doStart, doDeclare, doPlay, doContinue, doSetBots, doToggleAutoplay, doClaimAll,
-              authTab, doLogin, doSignup, doSendReset, doRecover, doLogout };
+              authTab, doLogin, doSignup, doSendReset, doRecover, doLogout,
+              openStats, statsGo, closeStats };
 
 // PACING BOT: quando tocca a un bot/autoplay, l'host (riserva: chiunque) aspetta
 // 2-3s e poi fa fare UNA mossa (advance_bot). Dopo la mossa il realtime ridisegna
@@ -665,6 +668,84 @@ async function doLogout(){
   renderAuth();
 }
 
+// ---- statistiche (v1.3) ----
+async function openStats(){
+  const [me, hist, board] = await Promise.all([
+    supabase.rpc("get_my_stats"),
+    supabase.rpc("get_my_history"),
+    supabase.rpc("get_leaderboard"),
+  ]);
+  const err = me.error || hist.error || board.error;
+  if(err){ showError(err.message || "Errore statistiche"); return; }
+  statsCache = { me:(me.data && me.data[0]) || null, history: hist.data || [], board: board.data || [] };
+  statsTab = "me";
+  renderStatsScreen();
+}
+
+function statsGo(m){ statsTab = m; renderStatsScreen(); }
+function closeStats(){ statsCache = null; render(); }
+
+function fmtDate(ts){
+  const d = new Date(ts);
+  return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0");
+}
+
+function renderStatsScreen(){
+  game = null;
+  const tab = (m,label)=>'<button class="'+(statsTab===m?'':'ghost')+'" style="width:auto;padding:8px 12px;margin:0 3px" onclick="UI.statsGo(\''+m+'\')">'+label+'</button>';
+  const empty = '<p class="waitmsg">Nessuna partita ancora: finiscine una e torna qui!</p>';
+  let bodyHtml = "";
+  if(statsTab==="me"){
+    const s = statsCache.me;
+    if(!s || !s.games){ bodyHtml = empty; }
+    else {
+      const row = (k,v)=>'<tr><td style="opacity:.85;padding:6px 8px">'+k+'</td><td style="text-align:right;font-weight:800;padding:6px 8px">'+v+'</td></tr>';
+      bodyHtml = '<table style="width:100%;border-collapse:collapse">'+
+        row("Partite giocate", s.games)+
+        row("Vinte", s.wins)+
+        row("Win rate", esc(String(s.win_rate))+"%")+
+        row("Punti medi", esc(String(s.avg_score)))+
+        row("Miglior punteggio", s.best_score)+
+        row("Piazzamento medio", esc(String(s.avg_rank)))+
+        row("Dichiarazioni esatte", s.decl_exact+"/"+s.decl_rounds+" ("+esc(String(s.decl_accuracy))+"%)")+
+        '</table>';
+    }
+  } else if(statsTab==="history"){
+    const h = statsCache.history;
+    if(!h.length){ bodyHtml = empty; }
+    else {
+      bodyHtml = '<table style="width:100%;border-collapse:collapse;font-size:.85rem">'+
+        '<tr style="opacity:.7"><th>Data</th><th>Gioc.</th><th>Punti</th><th>Posto</th><th>Vincitore</th></tr>'+
+        h.map(g=>'<tr style="text-align:center">'+
+          '<td style="padding:5px">'+fmtDate(g.finished_at)+'</td>'+
+          '<td>'+g.num_players+'</td>'+
+          '<td>'+g.my_score+'</td>'+
+          '<td>'+g.my_rank+'°</td>'+
+          '<td>'+(g.my_rank===1?"🏆 ":"")+esc(g.winner_name||"?")+'</td>'+
+        '</tr>').join("")+'</table>';
+    }
+  } else {
+    const b = statsCache.board;
+    if(!b.length){ bodyHtml = empty; }
+    else {
+      const medals = ["🥇","🥈","🥉"];
+      bodyHtml = '<table style="width:100%;border-collapse:collapse;font-size:.85rem">'+
+        '<tr style="opacity:.7"><th>#</th><th style="text-align:left">Nickname</th><th>G</th><th>V</th><th>%</th><th>Punti medi</th></tr>'+
+        b.map((r,i)=>'<tr style="text-align:center'+(r.nickname===myNickname?';color:var(--gold);font-weight:800':'')+'">'+
+          '<td style="padding:5px">'+(medals[i]||(i+1))+'</td>'+
+          '<td style="text-align:left">'+esc(r.nickname)+'</td>'+
+          '<td>'+r.games+'</td><td>'+r.wins+'</td>'+
+          '<td>'+esc(String(r.win_rate))+'</td>'+
+          '<td>'+esc(String(r.avg_score))+'</td>'+
+        '</tr>').join("")+'</table>';
+    }
+  }
+  app.innerHTML = '<h1>📊 Statistiche</h1>'+
+    '<div class="panel"><div style="display:flex;justify-content:center;margin-bottom:10px">'+
+    tab("me","Le mie")+tab("history","Storico")+tab("board","Classifica")+'</div>'+bodyHtml+'</div>'+
+    '<button class="ghost" onclick="UI.closeStats()">← Torna</button>';
+}
+
 function renderHome(){
   game=null;
   app.innerHTML =
@@ -673,6 +754,7 @@ function renderHome(){
   '<div class="panel"><label>Oppure entra con un codice</label>'+
     '<input id="code" class="code" maxlength="4" placeholder="ABCD">'+
     '<button class="ghost" onclick="UI.doJoin()">Entra nella stanza</button></div>'+
+  '<button class="ghost" onclick="UI.openStats()">📊 Statistiche</button>'+
   '<p class="tiny" style="text-align:center;margin-top:14px"><a href="#" style="color:inherit;opacity:.7" onclick="UI.doLogout();return false">Esci</a></p>';
 }
 
