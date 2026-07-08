@@ -5,8 +5,8 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ## Migration applicate
 
-### ⏳ 007_start_cards
-- **Stato:** PENDING (creata, da applicare su Supabase)
+### ✅ 007_start_cards
+- **Stato:** APPLICATA (2026-07-08)
 - **Creata:** 2026-07-08
 - **Autore:** soogiue
 - **Descrizione:** Colonna `public.games.start_cards` (int, default 1,
@@ -19,8 +19,8 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ---
 
-### ⏳ 006_stats
-- **Stato:** PENDING (creata, da applicare su Supabase)
+### ✅ 006_stats
+- **Stato:** APPLICATA (2026-07-08)
 - **Creata:** 2026-07-08
 - **Autore:** soogiue
 - **Descrizione:** Tre funzioni RPC `security definer` per la schermata 📊:
@@ -36,8 +36,8 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ---
 
-### ⏳ 005_profiles
-- **Stato:** PENDING (creata, da applicare su Supabase)
+### ✅ 005_profiles
+- **Stato:** APPLICATA (2026-07-08)
 - **Creata:** 2026-07-07
 - **Autore:** soogiue
 - **Descrizione:** Nuova tabella `public.profiles` (nickname unico
@@ -54,8 +54,8 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ---
 
-### ⏳ 004_autoplay
-- **Stato:** PENDING (creata, da applicare su Supabase)
+### ✅ 004_autoplay
+- **Stato:** APPLICATA (data esatta in `internal.schema_migrations`)
 - **Creata:** 2026-06-24
 - **Autore:** soogiue
 - **Descrizione:** Colonna `public.game_players.autoplay` (bool, default false)
@@ -69,8 +69,8 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ---
 
-### ⏳ 003_bot_players
-- **Stato:** PENDING (creata, da applicare su Supabase)
+### ✅ 003_bot_players
+- **Stato:** APPLICATA (data esatta in `internal.schema_migrations`)
 - **Creata:** 2026-06-23
 - **Autore:** soogiue
 - **Descrizione:** Colonna `public.game_players.is_bot` (bool, default false)
@@ -82,8 +82,8 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ---
 
-### ⏳ 002_chat_messages
-- **Stato:** PENDING (creata, non ancora applicata su Supabase)
+### ✅ 002_chat_messages
+- **Stato:** APPLICATA (data esatta in `internal.schema_migrations`)
 - **Creata:** 2026-06-23
 - **Autore:** soogiue
 - **Descrizione:** Nuova tabella `public.chat_messages` per la chat di stanza
@@ -97,8 +97,8 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ---
 
-### ⏳ 001_v1_game_history
-- **Stato:** PENDING (creata, non ancora applicata su Supabase)
+### ✅ 001_v1_game_history
+- **Stato:** APPLICATA (data esatta in `internal.schema_migrations`)
 - **Creata:** 2026-06-23
 - **Autore:** soogiue
 - **Descrizione:** Nuovo schema `history` per il logging event-level di ogni
