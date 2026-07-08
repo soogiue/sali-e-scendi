@@ -82,3 +82,8 @@ sali-e-scendi-online/
 
 > ⚠️ Per attivarla: esegui `migrations/007_start_cards/up.sql`, ri-pubblica la
 > function (`supabase functions deploy game`) e il frontend.
+
+- **🃏 Segnapunti per carte vere**: pagina `web/segnapunti.html`, **senza login**
+  e offline, per segnare i punti quando si gioca col mazzo fisico. Calcola i
+  punti con la regola reale, annulla l'ultima mano, salva su `localStorage`.
+  Linkata dalla schermata di accesso.

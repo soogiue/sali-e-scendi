@@ -601,7 +601,8 @@ function renderAuth(){
   }
   app.innerHTML = '<h1>🂡 Sali e Scendi</h1><p class="sub">Accedi per giocare online con gli amici</p>'+
     '<div class="panel"><div style="display:flex;justify-content:center;margin-bottom:12px">'+
-    tab("login","Accedi")+tab("signup","Registrati")+'</div>'+form+'</div>';
+    tab("login","Accedi")+tab("signup","Registrati")+'</div>'+form+'</div>'+
+    '<p class="tiny" style="text-align:center;margin-top:14px"><a href="segnapunti.html" style="color:inherit;opacity:.7">🃏 Giochi con le carte vere? Apri il segnapunti</a></p>';
 }
 
 function authTab(m){ authMode = m; renderAuth(); }
