@@ -14,6 +14,7 @@
 //                               il server gioca/dichiara in automatico)
 //   - send_message{ gameId, body }            (membro: invia un messaggio di chat)
 //   - set_bots    { gameId, count }            (host/lobby: imposta quanti bot)
+//   - set_start_cards { gameId, value }        (host/lobby: da quante carte si parte, 1..10)
 //   - toggle_autoplay { gameId, on? }          (AUTOGAME: delega/riprendi il posto a un bot ML)
 //   - claim_all   { gameId }                   (TUTTO MIO: pretende tutte le prese restanti)
 //   - advance_bot { gameId }                   (host: fa fare UNA mossa al bot/autoplay di turno)
@@ -77,6 +78,7 @@ Deno.serve(async (req) => {
       case "timeout":       return await timeoutAction(db, user.id, body);
       case "send_message":  return await sendMessage(db, user.id, body);
       case "set_bots":      return await setBots(db, user.id, body);
+      case "set_start_cards": return await setStartCards(db, user.id, body);
       case "toggle_autoplay": return await toggleAutoplay(db, user.id, body);
       case "claim_all":     return await claimAll(db, user.id, body);
       case "advance_bot":   return await advanceBot(db, user.id, body);
@@ -159,7 +161,8 @@ async function startGame(db: any, userId: string, body: any) {
   if (n < 4 || n > 5) return json({ error: "Servono 4 o 5 giocatori (ora: " + n + ")" }, 400);
 
   const maxCards = E.maxCardsFor(n);
-  const rounds = E.roundsSequence(maxCards);
+  const startCards = Math.min(game.start_cards ?? 1, maxCards); // clamp al picco reale
+  const rounds = E.roundsSequence(maxCards, startCards);
   await db.from("games").update({
     status: "playing", num_players: n, max_cards: maxCards, rounds, round_index: 0,
   }).eq("id", game.id);
@@ -332,6 +335,23 @@ async function sendMessage(db: any, userId: string, body: any) {
     display_name: me.display_name,
     body: text,
   });
+  if (error) return json({ error: error.message }, 400);
+  return json({ ok: true });
+}
+
+// Host: da quante carte si parte (solo in lobby). Il clamp al picco reale
+// del tavolo avviene in startGame (qui il numero di giocatori puo' ancora cambiare).
+async function setStartCards(db: any, userId: string, body: any) {
+  const { data: game } = await db.from("games").select("*").eq("id", body.gameId).single();
+  if (!game) return json({ error: "Partita non trovata" }, 404);
+  if (game.host_user !== userId) return json({ error: "Solo l'host può scegliere la partenza" }, 403);
+  if (game.status !== "lobby") return json({ error: "La partenza si sceglie prima dell'inizio" }, 400);
+
+  const value = Number(body.value);
+  if (!Number.isInteger(value) || value < 1 || value > 10)
+    return json({ error: "Partenza non valida (1–10)" }, 400);
+
+  const { error } = await db.from("games").update({ start_cards: value }).eq("id", game.id);
   if (error) return json({ error: error.message }, 400);
   return json({ ok: true });
 }
