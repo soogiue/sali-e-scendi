@@ -22,6 +22,8 @@ create table if not exists public.games (
   num_players       int,                                  -- fissato all'avvio (4 o 5)
   max_cards         int,                                  -- 10 (4 gioc.) o 8 (5 gioc.)
   rounds            int[],                                -- sequenza dei round, es. {1,2,...,8,8,...,1}
+  start_cards       int not null default 1
+                      check (start_cards between 1 and 10), -- da quante carte si parte (scelta host, v1.4)
   round_index       int not null default 0,               -- indice nel vettore rounds
   phase             text not null default 'lobby'
                       check (phase in ('lobby','declaring','playing','trick_done','round_end','finished')),
@@ -42,6 +44,7 @@ create table if not exists public.games (
 
 -- Per chi ha gia eseguito il setup in precedenza: aggiunge la colonna senza errori.
 alter table public.games add column if not exists turn_deadline timestamptz;
+alter table public.games add column if not exists start_cards int not null default 1;
 
 -- I giocatori di una partita (dati PUBBLICI ai membri: nome, punteggio, dichiarazione, prese)
 create table if not exists public.game_players (
