@@ -209,7 +209,9 @@ create trigger trg_games_touch before update on public.games
 -- ------------------------------------------------------------
 -- RPC statistiche (v1.3): lettori security definer sullo schema
 -- history, eseguibili solo da utenti loggati. Vedi migration 006.
--- NOTA: richiede che lo schema history esista (migration 001).
+-- ATTENZIONE: i CREATE FUNCTION seguenti FALLISCONO se lo schema
+-- history non esiste (Postgres valida i corpi SQL alla creazione):
+-- applicare migrations/001_v1_game_history/up.sql PRIMA di questo blocco.
 -- ------------------------------------------------------------
 
 -- ------------------------------------------------------------
