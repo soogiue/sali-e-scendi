@@ -253,6 +253,8 @@ let botPump={ key:"", timer:0 }; // pacing mosse bot (delay 2-3s, guidato dall'h
 let chatMessages = [];     // messaggi della stanza, ordinati per created_at
 let chatOpen = true;       // chat in partita: parte APERTA (dock comprimibile in fondo)
 let chatUnread = 0;        // contatore non letti (badge in partita)
+let authMode = "login";   // "login" | "signup" | "reset"
+let myNickname = "";
 
 // ---- helpers regole (solo per la UI; il server è autoritativo) ----
 function legalForUI(hand, leadSeed){
@@ -284,15 +286,16 @@ function avColor(name){
     return;
   }
   supabase = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
-  let { data:{ session } } = await supabase.auth.getSession();
-  if(!session){
-    const { data, error } = await supabase.auth.signInAnonymously();
-    if(error){ app.innerHTML='<div class="panel">Errore login: '+esc(error.message)+'<p class="tiny">Hai abilitato "Anonymous sign-ins" in Supabase → Authentication → Providers?</p></div>'; return; }
-    session = data.session;
-  }
-  myUserId = session.user.id;
+  // il link "recupero password" riapre l'app con un token: supabase-js lo
+  // processa e emette PASSWORD_RECOVERY (durante getSession) → vista "nuova password".
+  // Il flag evita che startAuthedApp sovrascriva subito la vista col render della home.
+  let inRecovery = false;
+  supabase.auth.onAuthStateChange((event)=>{ if(event==="PASSWORD_RECOVERY"){ inRecovery = true; renderRecovery(); } });
   setInterval(tickTimer, 200); // timer del turno (lato client)
-  render();
+  const { data:{ session } } = await supabase.auth.getSession();
+  if(inRecovery) return;
+  if(!session){ renderAuth(); return; }
+  await startAuthedApp(session);
 })();
 
 async function invoke(action, payload){
@@ -308,17 +311,13 @@ async function invoke(action, payload){
 
 // ---- azioni ----
 async function doCreate(){
-  const name = (document.getElementById("nm").value||"").trim();
-  if(!name){ showError("Inserisci il tuo nome"); document.getElementById("nm").focus(); return; }
-  const res = await invoke("create_game", { displayName:name });
+  const res = await invoke("create_game", {});
   if(res){ gameId=res.gameId; myCode=res.code; mySeat=res.seat; await enterGame(); }
 }
 async function doJoin(){
-  const name = (document.getElementById("nm").value||"").trim();
-  if(!name){ showError("Inserisci il tuo nome"); document.getElementById("nm").focus(); return; }
   const code = (document.getElementById("code").value||"").trim().toUpperCase();
   if(code.length<4){ showError("Inserisci il codice stanza"); return; }
-  const res = await invoke("join_game", { code, displayName:name });
+  const res = await invoke("join_game", { code });
   if(res){ gameId=res.gameId; myCode=res.code; mySeat=res.seat; await enterGame(); }
 }
 async function doStart(){ await invoke("start_game", { gameId }); }
@@ -338,7 +337,8 @@ async function doClaimAll(){
 }
 async function doAdvanceBot(){ await invoke("advance_bot", { gameId }); }
 
-window.UI = { doCreate, doJoin, doStart, doDeclare, doPlay, doContinue, doSetBots, doToggleAutoplay, doClaimAll };
+window.UI = { doCreate, doJoin, doStart, doDeclare, doPlay, doContinue, doSetBots, doToggleAutoplay, doClaimAll,
+              authTab, doLogin, doSignup, doSendReset, doRecover, doLogout };
 
 // PACING BOT: quando tocca a un bot/autoplay, l'host (riserva: chiunque) aspetta
 // 2-3s e poi fa fare UNA mossa (advance_bot). Dopo la mossa il realtime ridisegna
@@ -556,16 +556,124 @@ function renderBody(){
   }
 }
 
+// ---- account (v1.2) ----
+async function startAuthedApp(session){
+  if(!session){ renderAuth(); return; }
+  myUserId = session.user.id;
+  const { data: prof } = await supabase.from("profiles").select("nickname").eq("id", myUserId).maybeSingle();
+  myNickname = prof ? prof.nickname : "";
+  render();
+}
+
+function mapAuthError(msg){
+  const m = String(msg||"");
+  if(m.indexOf("Invalid login credentials")>=0) return "Email o password sbagliata";
+  if(m.indexOf("User already registered")>=0) return "Email già registrata";
+  if(m.indexOf("Database error saving new user")>=0) return "Nickname già in uso, provane un altro";
+  if(m.indexOf("Password should be at least")>=0) return "La password deve avere almeno 6 caratteri";
+  return m;
+}
+
+function renderAuth(){
+  game = null;
+  const tab = (m,label)=>'<button class="'+(authMode===m?'':'ghost')+'" style="width:auto;padding:8px 16px;margin:0 4px" onclick="UI.authTab(\''+m+'\')">'+label+'</button>';
+  let form = "";
+  if(authMode==="login"){
+    form = '<label>Email</label><input id="au-email" type="email" autocomplete="email">'+
+      '<label>Password</label><input id="au-pass" type="password" autocomplete="current-password">'+
+      '<button onclick="UI.doLogin()">Accedi</button>'+
+      '<p class="tiny" style="margin-top:10px;text-align:center"><a href="#" style="color:var(--gold)" onclick="UI.authTab(\'reset\');return false">Password dimenticata?</a></p>';
+  } else if(authMode==="signup"){
+    form = '<label>Nickname <span style="opacity:.7">(3–20 caratteri, unico)</span></label>'+
+      '<input id="au-nick" maxlength="20" placeholder="Es. Gio77">'+
+      '<label>Email</label><input id="au-email" type="email" autocomplete="email">'+
+      '<label>Password <span style="opacity:.7">(min 6)</span></label>'+
+      '<input id="au-pass" type="password" autocomplete="new-password">'+
+      '<button onclick="UI.doSignup()">Registrati</button>';
+  } else { // reset
+    form = '<label>Email dell\'account</label><input id="au-email" type="email" autocomplete="email">'+
+      '<button onclick="UI.doSendReset()">Invia email di recupero</button>'+
+      '<p class="tiny" style="margin-top:10px;text-align:center"><a href="#" style="color:var(--gold)" onclick="UI.authTab(\'login\');return false">Torna al login</a></p>';
+  }
+  app.innerHTML = '<h1>🂡 Sali e Scendi</h1><p class="sub">Accedi per giocare online con gli amici</p>'+
+    '<div class="panel"><div style="display:flex;justify-content:center;margin-bottom:12px">'+
+    tab("login","Accedi")+tab("signup","Registrati")+'</div>'+form+'</div>';
+}
+
+function authTab(m){ authMode = m; renderAuth(); }
+
+async function doLogin(){
+  const email = (document.getElementById("au-email").value||"").trim();
+  const pass  = document.getElementById("au-pass").value||"";
+  if(!email || !pass){ showError("Inserisci email e password"); return; }
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
+  if(error){ showError(mapAuthError(error.message)); return; }
+  await startAuthedApp(data.session);
+}
+
+async function doSignup(){
+  const nick  = (document.getElementById("au-nick").value||"").trim();
+  const email = (document.getElementById("au-email").value||"").trim();
+  const pass  = document.getElementById("au-pass").value||"";
+  if(nick.length<3 || nick.length>20){ showError("Il nickname deve avere 3–20 caratteri"); return; }
+  if(!email){ showError("Inserisci l'email"); return; }
+  if(pass.length<6){ showError("La password deve avere almeno 6 caratteri"); return; }
+  // pre-check disponibilità (il vincolo unico sul DB resta la rete di sicurezza
+  // contro le race; qui serve solo un errore leggibile). Escape di %/_ per ilike.
+  const pat = nick.replace(/[\\%_]/g, function(ch){ return "\\"+ch; });
+  const { data: taken } = await supabase.from("profiles").select("id").ilike("nickname", pat).maybeSingle();
+  if(taken){ showError("Nickname già in uso, provane un altro"); return; }
+  const { data, error } = await supabase.auth.signUp({ email, password: pass, options:{ data:{ nickname: nick } } });
+  if(error){ showError(mapAuthError(error.message)); return; }
+  // se "Confirm email" fosse (per sbaglio) attivo nel dashboard, niente sessione:
+  if(!data.session){ showError("Controlla la tua email per confermare la registrazione"); return; }
+  await startAuthedApp(data.session);
+}
+
+async function doSendReset(){
+  const email = (document.getElementById("au-email").value||"").trim();
+  if(!email){ showError("Inserisci l'email"); return; }
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  if(error){ showError(mapAuthError(error.message)); return; }
+  showError("Email inviata: apri il link per scegliere la nuova password");
+}
+
+function renderRecovery(){
+  game = null;
+  app.innerHTML = '<h1>🂡 Sali e Scendi</h1><p class="sub">Scegli la nuova password</p>'+
+    '<div class="panel"><label>Nuova password <span style="opacity:.7">(min 6)</span></label>'+
+    '<input id="au-pass" type="password" autocomplete="new-password">'+
+    '<label>Ripeti password</label><input id="au-pass2" type="password" autocomplete="new-password">'+
+    '<button onclick="UI.doRecover()">Salva e gioca</button></div>';
+}
+
+async function doRecover(){
+  const p1 = document.getElementById("au-pass").value||"";
+  const p2 = document.getElementById("au-pass2").value||"";
+  if(p1.length<6){ showError("La password deve avere almeno 6 caratteri"); return; }
+  if(p1!==p2){ showError("Le password non coincidono"); return; }
+  const { error } = await supabase.auth.updateUser({ password: p1 });
+  if(error){ showError(mapAuthError(error.message)); return; }
+  const { data:{ session } } = await supabase.auth.getSession();
+  await startAuthedApp(session);
+}
+
+async function doLogout(){
+  await supabase.auth.signOut();
+  myUserId = null; myNickname = ""; game = null; gameId = null;
+  authMode = "login";
+  renderAuth();
+}
+
 function renderHome(){
   game=null;
   app.innerHTML =
-  '<h1>🂡 Sali e Scendi</h1><p class="sub">Gioca online con gli amici, ognuno sul suo telefono</p>'+
-  '<div class="panel"><label>Il tuo nome <span style="opacity:.7">(obbligatorio)</span></label>'+
-    '<input id="nm" maxlength="14" placeholder="Es. Gio" required>'+
-    '<button onclick="UI.doCreate()">Crea una stanza</button></div>'+
+  '<h1>🂡 Sali e Scendi</h1><p class="sub">Ciao, <b style="color:var(--gold)">'+esc(myNickname||"?")+'</b> — gioca online con gli amici</p>'+
+  '<div class="panel"><button onclick="UI.doCreate()">Crea una stanza</button></div>'+
   '<div class="panel"><label>Oppure entra con un codice</label>'+
     '<input id="code" class="code" maxlength="4" placeholder="ABCD">'+
-    '<button class="ghost" onclick="UI.doJoin()">Entra nella stanza</button></div>';
+    '<button class="ghost" onclick="UI.doJoin()">Entra nella stanza</button></div>'+
+  '<p class="tiny" style="text-align:center;margin-top:14px"><a href="#" style="color:inherit;opacity:.7" onclick="UI.doLogout();return false">Esci</a></p>';
 }
 
 function renderWaiting(){

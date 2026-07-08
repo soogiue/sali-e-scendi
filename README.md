@@ -50,3 +50,15 @@ sali-e-scendi-online/
 - **Timer di turno da 15 secondi** con **auto-mossa** allo scadere (il server gioca la carta legale più debole / una dichiarazione valida), così la partita non si blocca.
 
 > ⚠️ Se avevi già fatto il setup prima della v1.1: **ri-esegui `db/setup.sql`** (aggiunge la colonna `turn_deadline`) e **ri-pubblica** la function con `supabase functions deploy game`.
+
+## Novità (v1.2)
+
+- **Account veri**: login/registrazione con email e password, niente più accesso
+  anonimo. **Nickname unico** scelto alla registrazione, usato in ogni partita
+  (il campo "nome" è sparito). Recupero password via email e logout dalla home.
+- Il nickname lo legge **il server** dal profilo (`public.profiles`): il client
+  non manda più nomi.
+
+> ⚠️ Se avevi il setup della v1.1: esegui `migrations/005_profiles/up.sql`,
+> ri-pubblica la function e il frontend, e sistema i 3 toggle del dashboard
+> descritti in SETUP.md (sezione "Account (v1.2)").

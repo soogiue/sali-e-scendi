@@ -4,8 +4,8 @@
 //  con la service_role (bypassa la RLS). I client non scrivono mai.
 //
 //  Azioni (POST JSON { action, ... }):
-//   - create_game { displayName }            -> { gameId, code, seat }
-//   - join_game   { code, displayName }       -> { gameId, code, seat }
+//   - create_game {}                          -> { gameId, code, seat }   (nickname da profiles)
+//   - join_game   { code }                    -> { gameId, code, seat }   (nickname da profiles)
 //   - start_game  { gameId }                  (solo host)
 //   - declare     { gameId, value }
 //   - play_card   { gameId, card:{seed,rank} }
@@ -89,9 +89,17 @@ Deno.serve(async (req) => {
 
 // ---------------- AZIONI ----------------
 
+// Il nome del giocatore viene SEMPRE dal profilo (identità non falsificabile).
+async function nicknameOf(db: any, userId: string): Promise<string | null> {
+  const { data, error } = await db.from("profiles").select("nickname")
+    .eq("id", userId).maybeSingle();
+  if (error) throw error; // errore vero di query → 500 dal handler top-level
+  return data?.nickname ?? null;
+}
+
 async function createGame(db: any, userId: string, body: any) {
-  const displayName = cleanName(body.displayName);
-  if (!displayName) return json({ error: "Inserisci il tuo nome" }, 400);
+  const displayName = await nicknameOf(db, userId);
+  if (!displayName) return json({ error: "Profilo mancante: registrati di nuovo" }, 403);
   // codice unico
   let code = genCode();
   for (let i = 0; i < 6; i++) {
@@ -113,8 +121,8 @@ async function createGame(db: any, userId: string, body: any) {
 
 async function joinGame(db: any, userId: string, body: any) {
   const code = String(body.code ?? "").toUpperCase().trim();
-  const displayName = cleanName(body.displayName);
-  if (!displayName) return json({ error: "Inserisci il tuo nome" }, 400);
+  const displayName = await nicknameOf(db, userId);
+  if (!displayName) return json({ error: "Profilo mancante: registrati di nuovo" }, 403);
 
   const { data: game } = await db.from("games").select("*").eq("code", code).maybeSingle();
   if (!game) return json({ error: "Stanza non trovata" }, 404);
@@ -122,7 +130,7 @@ async function joinGame(db: any, userId: string, body: any) {
 
   const { data: players } = await db.from("game_players")
     .select("*").eq("game_id", game.id).order("seat");
-  // già dentro? (aggiorna comunque il nome scelto)
+  // già dentro? (aggiorna il nome dal profilo)
   const mine = (players ?? []).find((p: any) => p.user_id === userId);
   if (mine) {
     await db.from("game_players").update({ display_name: displayName })
@@ -792,9 +800,6 @@ async function taken(db: any, gameId: string, seat: number): Promise<number> {
   return data?.taken ?? 0;
 }
 
-function cleanName(raw: unknown): string {
-  return String(raw ?? "").trim().slice(0, 14);
-}
 
 // ---------------- DISTRIBUZIONE / PUNTEGGI ----------------
 

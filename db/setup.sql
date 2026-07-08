@@ -97,6 +97,38 @@ create index if not exists idx_hands_owner       on public.hands(user_id);
 create index if not exists idx_round_results_game on public.round_results(game_id, round_index);
 create index if not exists idx_chat_messages_game on public.chat_messages(game_id, created_at);
 
+-- ------------------------------------------------------------
+-- public.profiles — un profilo per account (nickname unico).
+-- Creata dal trigger alla registrazione (v1.2, niente login anonimo).
+-- ------------------------------------------------------------
+create table if not exists public.profiles (
+  id         uuid primary key references auth.users(id) on delete cascade,
+  nickname   text not null,
+  created_at timestamptz not null default now(),
+  constraint nickname_len check (char_length(nickname) between 3 and 20)
+);
+
+create unique index if not exists idx_profiles_nickname on public.profiles (lower(nickname));
+
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.profiles (id, nickname)
+  values (new.id, trim(new.raw_user_meta_data->>'nickname'));
+  return new;
+end $$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+alter table public.profiles enable row level security;
+
+drop policy if exists profiles_select on public.profiles;
+create policy profiles_select on public.profiles
+  for select to anon, authenticated using (true);
+
 -- ---------- FUNZIONE DI SUPPORTO (membership) ----------
 -- SECURITY DEFINER: legge game_players bypassando la RLS, così le policy
 -- non vanno in ricorsione infinita.
