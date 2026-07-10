@@ -5,6 +5,25 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ## Migration applicate
 
+### ⏳ 008_login_by_nickname
+- **Stato:** DA APPLICARE
+- **Creata:** 2026-07-10
+- **Autore:** soogiue
+- **Descrizione:** Funzione `public.email_for_nickname(text)` `security definer`
+  che ricava l'email dell'account dato il nickname (match case-insensitive).
+  Abilita il login col solo nickname: il client, se l'input non contiene `@`,
+  chiama la RPC per ottenere l'email e poi fa `signInWithPassword`.
+- **Schemi aggiunti:** nessuno
+- **Tabelle:** nessuna (solo funzione)
+- **Breaking:** No — solo aggiunta; senza migration il login funziona ancora
+  via email, quello via nickname mostra "Nickname o password sbagliata".
+- **Scopo:** Accesso più comodo col nickname, oltre all'email.
+- **Note:** `GRANT EXECUTE` ad `anon` (il lookup precede il login). Consente
+  l'enumerazione nickname → email; accettabile per un gioco tra amici.
+  Richiede 005 (profiles).
+
+---
+
 ### ✅ 007_start_cards
 - **Stato:** APPLICATA (2026-07-08)
 - **Creata:** 2026-07-08

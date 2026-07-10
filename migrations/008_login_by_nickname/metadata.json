@@ -1,0 +1,15 @@
+{
+  "version": "008_login_by_nickname",
+  "description": "Add public.email_for_nickname(text) security definer function that resolves a nickname to its account email, enabling login by nickname (in addition to email)",
+  "author": "soogiue",
+  "created_at": "2026-07-10",
+  "applied_at": null,
+  "status": "pending",
+  "breaking": false,
+  "schemas_added": [],
+  "tables_affected": [],
+  "views_added": [],
+  "functions_added": ["public.email_for_nickname(text)"],
+  "reason": "Login anche col solo nickname: Supabase Auth accede via email, quindi il client ricava l'email dal nickname prima di signInWithPassword",
+  "notes": "SECURITY DEFINER per leggere auth.users; ritorna solo l'email, match case-insensitive. GRANT a anon perche il lookup precede il login. Non breaking, additivo. Privacy: consente enumerazione nickname->email; accettabile per un gioco tra amici."
+}

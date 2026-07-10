@@ -287,7 +287,12 @@ function avColor(name){
     app.innerHTML = '<div class="panel"><h2>Configurazione mancante</h2><p class="tiny">Apri <b>config.js</b> e inserisci SUPABASE_URL e SUPABASE_ANON_KEY (li trovi in Supabase → Project Settings → API).</p></div>';
     return;
   }
-  supabase = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+  // Sessione salvata in sessionStorage (per-scheda): ricaricare la pagina
+  // durante una partita mantiene l'accesso, ma chiudere e riaprire il link
+  // (nuova scheda/finestra) riparte sempre dalla pagina di login.
+  supabase = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
+    auth: { storage: window.sessionStorage }
+  });
   // il link "recupero password" riapre l'app con un token: supabase-js lo
   // processa e emette PASSWORD_RECOVERY (durante getSession) → vista "nuova password".
   // Il flag evita che startAuthedApp sovrascriva subito la vista col render della home.
@@ -571,7 +576,7 @@ async function startAuthedApp(session){
 
 function mapAuthError(msg){
   const m = String(msg||"");
-  if(m.indexOf("Invalid login credentials")>=0) return "Email o password sbagliata";
+  if(m.indexOf("Invalid login credentials")>=0) return "Email/nickname o password sbagliata";
   if(m.indexOf("User already registered")>=0) return "Email già registrata";
   if(m.indexOf("Database error saving new user")>=0) return "Nickname già in uso, provane un altro";
   if(m.indexOf("Password should be at least")>=0) return "La password deve avere almeno 6 caratteri";
@@ -583,7 +588,7 @@ function renderAuth(){
   const tab = (m,label)=>'<button class="'+(authMode===m?'':'ghost')+'" style="width:auto;padding:8px 16px;margin:0 4px" onclick="UI.authTab(\''+m+'\')">'+label+'</button>';
   let form = "";
   if(authMode==="login"){
-    form = '<label>Email</label><input id="au-email" type="email" autocomplete="email">'+
+    form = '<label>Email o nickname</label><input id="au-email" type="text" autocomplete="username">'+
       '<label>Password</label><input id="au-pass" type="password" autocomplete="current-password">'+
       '<button onclick="UI.doLogin()">Accedi</button>'+
       '<p class="tiny" style="margin-top:10px;text-align:center"><a href="#" style="color:var(--gold)" onclick="UI.authTab(\'reset\');return false">Password dimenticata?</a></p>';
@@ -608,9 +613,16 @@ function renderAuth(){
 function authTab(m){ authMode = m; renderAuth(); }
 
 async function doLogin(){
-  const email = (document.getElementById("au-email").value||"").trim();
+  const ident = (document.getElementById("au-email").value||"").trim();
   const pass  = document.getElementById("au-pass").value||"";
-  if(!email || !pass){ showError("Inserisci email e password"); return; }
+  if(!ident || !pass){ showError("Inserisci email o nickname e password"); return; }
+  let email = ident;
+  // Senza "@" e' un nickname: ricava l'email dell'account (Supabase accede via email).
+  if(ident.indexOf("@") < 0){
+    const { data: em, error: rpcErr } = await supabase.rpc("email_for_nickname", { nick: ident });
+    if(rpcErr || !em){ showError("Nickname o password sbagliata"); return; }
+    email = em;
+  }
   const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
   if(error){ showError(mapAuthError(error.message)); return; }
   await startAuthedApp(data.session);

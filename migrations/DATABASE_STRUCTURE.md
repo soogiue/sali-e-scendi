@@ -88,3 +88,11 @@ dataset usa la service_role.
 | `get_my_stats()` | 1 riga di aggregati personali (giocate, vinte, win rate, punti, piazzamento, precisione dichiarazioni). |
 | `get_my_history(p_limit default 20)` | Ultime partite concluse del chiamante (max 50). |
 | `get_leaderboard()` | Una riga per profilo con ≥1 partita conclusa; ordine vinte→win rate→nickname. |
+
+## Funzione RPC `public` per il login (da migration 008)
+
+`security definer`, execute `anon` + `authenticated` (il lookup precede il login).
+
+| Funzione | Ritorna |
+|---|---|
+| `email_for_nickname(nick text)` | L'email dell'account col nickname dato (match case-insensitive), per il login via nickname. Legge `auth.users`; ritorna solo l'email. |
