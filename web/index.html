@@ -81,8 +81,14 @@
   .legend{ display:flex; gap:12px; justify-content:center; font-size:.72rem; color:var(--muted); margin:2px 0 8px; }
   .legend i{ display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:middle; margin-right:4px; }
 
+  /* .felt è la "zona tavolo" (contenitore di posizionamento, trasparente):
+     i cerchi dei giocatori stanno sui suoi bordi. L'ovale VISIBILE è ::before,
+     rientrato, così il tavolo è più centrale e non finisce sotto gli avatar. */
   .felt{
     position:relative; width:100%; aspect-ratio:5/4; margin:6px 0 8px;
+  }
+  .felt::before{
+    content:""; position:absolute; inset:15% 13%;
     border-radius:48% / 46%;
     background:
       radial-gradient(120% 120% at 50% 32%, rgba(45,212,191,.10), rgba(0,0,0,0) 55%),
@@ -90,8 +96,8 @@
     border:1px solid var(--line2);
     box-shadow:inset 0 1px 0 rgba(255,255,255,.05), inset 0 22px 60px rgba(0,0,0,.35), 0 10px 26px rgba(0,0,0,.35);
   }
-  .felt .logo{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    font-weight:800; letter-spacing:3px; font-size:1.1rem; color:rgba(255,255,255,.06); pointer-events:none; }
+  .felt .logo{ position:absolute; inset:15% 13%; display:flex; align-items:center; justify-content:center;
+    font-weight:800; letter-spacing:3px; font-size:1.05rem; color:rgba(255,255,255,.06); pointer-events:none; }
 
   .roundinfo{ position:absolute; top:7px; left:50%; transform:translateX(-50%); z-index:6;
     background:rgba(10,13,18,.6); border:1px solid var(--line2); border-radius:999px;
@@ -157,6 +163,24 @@
   .gamectrl button.ghost{ box-shadow:none; }
   .gamectrl button.danger{ background:linear-gradient(180deg,#f87171,#dc2626); color:#fff; }
   .gamectrl button.on{ background:linear-gradient(180deg,#34d399,#10b981); color:#04211d; }
+
+  /* ===================== MENU DI PARTITA (a scomparsa, in alto a destra) ===================== */
+  #gamemenu:empty{ display:none; }
+  .gm-fab{ position:fixed; top:calc(10px + env(safe-area-inset-top)); right:calc(10px + env(safe-area-inset-right)); z-index:42;
+    width:44px; height:44px; padding:0; margin:0; border-radius:50%; font-size:1.25rem; line-height:1;
+    background:var(--surface2); color:var(--txt); border:1px solid var(--line2); box-shadow:0 4px 14px rgba(0,0,0,.4); }
+  .gm-fab:hover{ background:var(--surface3); box-shadow:0 4px 14px rgba(0,0,0,.4); }
+  .gm-overlay{ position:fixed; inset:0; z-index:42; background:transparent; }
+  .gm-panel{ position:fixed; z-index:43;
+    top:calc(62px + env(safe-area-inset-top)); right:calc(10px + env(safe-area-inset-right));
+    min-width:190px; background:var(--surface); border:1px solid var(--line2); border-radius:14px; padding:8px;
+    display:flex; flex-direction:column; gap:8px; box-shadow:0 14px 34px rgba(0,0,0,.5);
+    animation:gmIn .14s ease both; }
+  @keyframes gmIn{ from{ opacity:0; transform:translateY(-6px) scale(.98); } to{ opacity:1; transform:none; } }
+  .gm-panel button{ width:100%; margin:0; padding:11px 14px; font-size:.92rem; box-shadow:none; }
+  .gm-panel button.danger{ background:linear-gradient(180deg,#f87171,#dc2626); color:#fff; }
+  .gm-panel button.on{ background:linear-gradient(180deg,#34d399,#10b981); color:#04211d; }
+  @media(prefers-reduced-motion:reduce){ .gm-panel{ animation:none; } }
 
   /* la mia mano + barra azioni */
   .myhand{ display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin:4px 0 2px; }
@@ -242,6 +266,7 @@
 <div id="app"><p class="center" style="margin-top:30vh">Caricamento…</p></div>
 <div id="err" class="err"></div>
 <div id="chat"></div>
+<div id="gamemenu"></div>
 
 <script src="config.js"></script>
 <script type="module">
@@ -382,6 +407,7 @@ async function doClaimAll(){
 async function doAdvanceBot(){ await invoke("advance_bot", { gameId }); }
 
 window.UI = { doCreate, doJoin, doStart, doDeclare, doPlay, doContinue, doSetBots, doSetStartCards, doSetTrash, doEndGame, doToggleAutoplay, doClaimAll,
+              toggleGameMenu, closeGameMenu,
               authTab, doLogin, doSignup, doSendReset, doRecover, doLogout,
               openStats, statsGo, closeStats };
 
@@ -403,23 +429,38 @@ function maybePumpBot(){
   botPump.timer = setTimeout(()=>{ doAdvanceBot(); }, delay);
 }
 
-// barra controlli in partita: AUTOGAME (sempre) + TUTTO MIO (solo nel tuo turno di gioco)
-function gameControlsHTML(canClaim){
+// MENU DI PARTITA (a scomparsa, in alto a destra): AUTOGAME (sempre),
+// TUTTO MIO (solo nel tuo turno di gioco), TERMINA (solo host). Vive in un nodo
+// separato (#gamemenu) così non sta in mezzo al tavolo e non si ricostruisce
+// insieme al corpo del gioco.
+let menuOpen = false;
+function toggleGameMenu(){ menuOpen = !menuOpen; renderGameMenu(); }
+function closeGameMenu(){ menuOpen = false; renderGameMenu(); }
+
+function gameMenuButtonsHTML(){
   const me = players.find(p=>p.seat===mySeat);
-  if(!me || me.is_bot) return "";
-  const auto = !!me.autoplay;
-  const autoBtn = '<button class="'+(auto?'on':'ghost')+'" id="btn-auto">'+
+  const auto = !!(me && me.autoplay);
+  const canClaim = game.phase==="playing" && game.current_turn_seat===mySeat;
+  const autoBtn = '<button class="'+(auto?'on':'ghost')+'" onclick="UI.doToggleAutoplay()">'+
     (auto?'🙋 Riprendi controllo':'🤖 Autogame')+'</button>';
-  const claimBtn = canClaim ? '<button class="danger" id="btn-claim">🃏 TUTTO MIO</button>' : '';
-  // solo l'host, e solo mentre si gioca: può terminare la partita per tutti
+  const claimBtn = canClaim ? '<button class="danger" onclick="UI.doClaimAll();UI.closeGameMenu()">🃏 TUTTO MIO</button>' : '';
   const endBtn = (game.host_user===myUserId && game.status==="playing")
-    ? '<button class="danger" id="btn-end">🚪 Termina partita</button>' : '';
-  return '<div class="gamectrl">'+autoBtn+claimBtn+endBtn+'</div>';
+    ? '<button class="danger" onclick="UI.doEndGame()">🚪 Termina partita</button>' : '';
+  return autoBtn + claimBtn + endBtn;
 }
-function wireGameControls(){
-  const a=document.getElementById("btn-auto"); if(a) a.onclick=()=>UI.doToggleAutoplay();
-  const c=document.getElementById("btn-claim"); if(c) c.onclick=()=>UI.doClaimAll();
-  const e=document.getElementById("btn-end"); if(e) e.onclick=()=>UI.doEndGame();
+
+function renderGameMenu(){
+  const root = document.getElementById("gamemenu");
+  if(!root) return;
+  const inGame = game && game.status==="playing" && game.phase!=="finished";
+  const me = players.find(p=>p.seat===mySeat);
+  if(!inGame || !me || me.is_bot){ root.innerHTML=""; menuOpen=false; return; }
+  const fab = '<button class="gm-fab" onclick="UI.toggleGameMenu()" aria-label="Menu partita">'+(menuOpen?'✕':'⚙')+'</button>';
+  const panel = menuOpen
+    ? '<div class="gm-overlay" onclick="UI.closeGameMenu()"></div>'+
+      '<div class="gm-panel">'+gameMenuButtonsHTML()+'</div>'
+    : '';
+  root.innerHTML = fab + panel;
 }
 
 // ---- realtime + refresh ----
@@ -526,9 +567,11 @@ function cardHTML(card, opts){ opts=opts||{};
 function nameOf(seat){ const p=players.find(x=>x.seat===seat); return p?p.display_name:("Posto "+seat); }
 
 // posizioni dei posti attorno all'ovale: indice 0 = ME (in basso)
+// posizioni spinte verso il bordo esterno: l'ovale (rientrato) resta centrale
+// e non ci finisce sotto. indice 0 = ME (in basso).
 const SEAT_POS = {
-  4: [ [50,90],[7,48],[50,9],[93,48] ],
-  5: [ [50,90],[11,72],[15,21],[85,21],[89,72] ],
+  4: [ [50,93],[6,50],[50,7],[94,50] ],
+  5: [ [50,93],[9,73],[13,19],[87,19],[91,73] ],
 };
 function seatPos(localIdx, n){ const t=(SEAT_POS[n]||SEAT_POS[4]); return t[localIdx] || [50,50]; }
 
@@ -599,6 +642,7 @@ function myHandHTML(playable, leadSeed){
 function render(){
   renderBody();
   renderChat();
+  renderGameMenu();
 }
 
 function renderBody(){
@@ -903,9 +947,8 @@ function renderDeclaring(){
   } else {
     action = '<div class="actionbar"><p class="turnmsg">In attesa della dichiarazione di <b>'+esc(nameOf(game.current_turn_seat))+'</b>…</p></div>';
   }
-  app.innerHTML = feltHTML() + myHandHTML(false) + action + gameControlsHTML(false);
+  app.innerHTML = feltHTML() + myHandHTML(false) + action;
   if(myTurn) document.querySelectorAll("[data-decl]").forEach(b=>b.onclick=()=>UI.doDeclare(parseInt(b.dataset.decl,10)));
-  wireGameControls();
   maybePumpBot();
 }
 
@@ -916,17 +959,15 @@ function renderPlaying(){
   const msg = myTurn
     ? '<p class="turnmsg me">Tocca a te'+(leadSeed?' · seme: <b>'+esc(SEED_IT[leadSeed])+'</b>':' · apri la presa')+'</p>'
     : '<p class="turnmsg">Gioca <b>'+esc(nameOf(game.current_turn_seat))+'</b>…</p>';
-  app.innerHTML = feltHTML() + myHandHTML(myTurn, leadSeed) + '<div class="actionbar">'+msg+'</div>' + gameControlsHTML(myTurn);
+  app.innerHTML = feltHTML() + myHandHTML(myTurn, leadSeed) + '<div class="actionbar">'+msg+'</div>';
   if(myTurn) document.querySelectorAll(".card.legal[data-card]").forEach(el=>el.onclick=()=>UI.doPlay(JSON.parse(el.dataset.card)));
-  wireGameControls();
   maybePumpBot();
 }
 
 function renderTrickDone(){
   const isHost = game.host_user===myUserId;
   app.innerHTML = feltHTML() + myHandHTML(false) +
-    '<div class="actionbar"><p class="waitmsg">'+(isHost?"":"Prossima presa…")+'</p></div>' + gameControlsHTML(false);
-  wireGameControls();
+    '<div class="actionbar"><p class="waitmsg">'+(isHost?"":"Prossima presa…")+'</p></div>';
   // l'host fa avanzare automaticamente (così tutti vedono la presa)
   const key = "trick:"+game.round_index+":"+game.trick_index;
   if(isHost && lastAutoContinue!==key){ lastAutoContinue=key; setTimeout(()=>UI.doContinue(), 2500); }
