@@ -1,0 +1,10 @@
+{
+  "name": "sali-e-scendi",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sali e Scendi — gioco di carte online (anteprima locale del restyling)",
+  "scripts": {
+    "dev": "bun dev-server.mjs"
+  }
+}

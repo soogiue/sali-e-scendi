@@ -5,6 +5,24 @@ Storico cronologico delle migration. La fonte di verità "macchina" è
 
 ## Migration applicate
 
+### ⏳ 009_endgame_and_trash_toggle
+- **Stato:** DA APPLICARE
+- **Creata:** 2026-07-10
+- **Autore:** soogiue
+- **Descrizione:** `public.games`: aggiunto il valore `aborted` ai CHECK di
+  `status`/`phase` (l'host può terminare la partita a metà, senza vincitore) e
+  la colonna `bots_trash` (bool, default `true`) per l'interruttore in lobby dei
+  bot che insultano.
+- **Schemi aggiunti:** nessuno
+- **Tabelle:** public.games (+bots_trash, CHECK allargati)
+- **Breaking:** No — additivo; `aborted` nasce solo dalla nuova azione `end_game`.
+- **Scopo:** Fine partita anticipata (host) + scelta in lobby se i bot sfottono.
+- **Note:** Richiede il **redeploy della Edge Function `game`** (nuove azioni
+  `end_game` e `set_trash_talk`; trashtalk condizionato a `game.bots_trash`) e il
+  client aggiornato.
+
+---
+
 ### ⏳ 008_login_by_nickname
 - **Stato:** DA APPLICARE
 - **Creata:** 2026-07-10

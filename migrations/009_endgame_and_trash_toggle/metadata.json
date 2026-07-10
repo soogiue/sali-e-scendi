@@ -1,0 +1,15 @@
+{
+  "version": "009_endgame_and_trash_toggle",
+  "description": "public.games: add 'aborted' to status/phase CHECKs (host can end a game mid-play, no winner) + add column bots_trash boolean default true (lobby toggle for bot trashtalk)",
+  "author": "soogiue",
+  "created_at": "2026-07-10",
+  "applied_at": null,
+  "status": "pending",
+  "breaking": false,
+  "schemas_added": [],
+  "tables_affected": ["public.games"],
+  "views_added": [],
+  "functions_added": [],
+  "reason": "Feature: l'host termina la partita a meta' (stato 'aborted', nessun vincitore) e sceglie in lobby se i bot insultano (bots_trash)",
+  "notes": "Additivo, non breaking. 'aborted' nasce solo dalla nuova azione end_game della Edge Function; bots_trash default true = comportamento storico. Richiede il redeploy della Edge Function game (nuove azioni end_game e set_trash_talk)."
+}

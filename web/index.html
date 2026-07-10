@@ -2,99 +2,114 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0b6b3a">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<!-- viewport-fit=cover: la pagina si estende sotto notch/barra; le safe-area sotto evitano sovrapposizioni -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
 <title>Sali e Scendi — Online</title>
 <link rel="manifest" href="manifest.json">
+<!-- PWA iOS: aggiungi alla Home ⇒ app a schermo intero -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sali e Scendi">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <style>
   :root{
-    --felt1:#0f7e46; --felt2:#063f24; --gold:#f3c64b; --ink:#10271a;
-    --card-w:60px; --dich:#f3c64b; --pts:#3fb0ff;
+    /* ---- tema dark moderno (slate + accento teal) ---- */
+    --bg:#0e1116; --bg2:#0b0d12;
+    --surface:#171b23; --surface2:#1e232d; --surface3:#252b37;
+    --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
+    --txt:#e8eaf0; --muted:#98a0b0;
+    --accent:#2dd4bf; --accent2:#14b8a6; --accent-ink:#04211d;
+    /* retrocompat con il markup generato dal JS */
+    --gold:#2dd4bf; --dich:#2dd4bf; --pts:#5aa0ff; --ink:#0b0d12;
+    --felt1:#1b2330; --felt2:#0f141c;
+    --card-w:60px;
+    --radius:16px; --radius-sm:11px;
   }
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; padding:0; min-height:100%; }
   body{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    color:#fff; min-height:100dvh; display:flex; justify-content:center;
-    background-color:#0a5e34;
+    color:var(--txt); min-height:100dvh; display:flex; justify-content:center;
+    background-color:var(--bg);
+    /* sfondo statico e leggero: nessun background-attachment:fixed, niente texture ripetuta */
     background-image:
-      radial-gradient(140% 115% at 50% -10%, rgba(38,176,108,.55), rgba(6,64,34,0) 55%),
-      radial-gradient(125% 110% at 50% 120%, rgba(0,0,0,.6), rgba(0,0,0,0) 60%),
-      repeating-linear-gradient(45deg, rgba(255,255,255,.022) 0 2px, rgba(0,0,0,0) 2px 7px),
-      linear-gradient(160deg,#0f7e46,#063f24);
-    background-attachment:fixed;
+      radial-gradient(1100px 620px at 50% -8%, rgba(45,212,191,.08), transparent 60%),
+      linear-gradient(180deg, #10141b 0%, var(--bg) 42%, var(--bg2) 100%);
   }
-  #app{ width:100%; max-width:540px; padding:12px 12px 28px; }
-  h1{ font-size:1.5rem; margin:.2em 0; text-align:center; letter-spacing:1px;
-    text-shadow:0 2px 3px rgba(0,0,0,.45), 0 0 26px rgba(243,198,75,.30); }
-  h2{ font-size:1.1rem; margin:.4em 0; }
-  .sub{ opacity:.9; font-size:.85rem; text-align:center; margin-bottom:10px; }
+  #app{ width:100%; max-width:540px;
+    padding:calc(14px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(30px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)); }
+  h1{ font-size:1.5rem; margin:.25em 0; text-align:center; letter-spacing:.2px; font-weight:800; }
+  h2{ font-size:1.1rem; margin:.4em 0; font-weight:700; }
+  .sub{ color:var(--muted); font-size:.85rem; text-align:center; margin-bottom:12px; }
 
   button{
-    background:linear-gradient(180deg,#ffd969,#edae2c); color:#3a2a06;
-    border:1px solid rgba(255,255,255,.4); border-radius:14px; padding:13px 16px;
-    font-size:1.02rem; font-weight:800; letter-spacing:.3px; cursor:pointer;
-    box-shadow:0 4px 0 #b8861d, 0 9px 18px rgba(0,0,0,.28); width:100%; margin-top:10px; font-family:inherit;
+    background:linear-gradient(180deg,var(--accent),var(--accent2)); color:var(--accent-ink);
+    border:1px solid rgba(255,255,255,.10); border-radius:var(--radius-sm); padding:13px 16px;
+    font-size:1.02rem; font-weight:700; letter-spacing:.2px; cursor:pointer;
+    box-shadow:0 6px 16px rgba(45,212,191,.16); width:100%; margin-top:10px; font-family:inherit;
+    transition:transform .06s ease, box-shadow .16s ease, background .16s ease, opacity .16s ease;
   }
-  button:active{ transform:translateY(3px); box-shadow:0 1px 0 #b8861d, 0 4px 10px rgba(0,0,0,.22); }
-  button.ghost{ background:linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.06)); color:#fff;
-    border:1px solid rgba(255,255,255,.3); box-shadow:0 5px 14px rgba(0,0,0,.22); }
-  button:disabled{ background:#6f6f6f; color:#d2d2d2; box-shadow:none; border-color:rgba(255,255,255,.15); opacity:.7; cursor:not-allowed; }
+  button:hover{ box-shadow:0 8px 22px rgba(45,212,191,.24); }
+  button:active{ transform:translateY(1px); box-shadow:0 3px 10px rgba(45,212,191,.18); }
+  button.ghost{ background:var(--surface2); color:var(--txt);
+    border:1px solid var(--line2); box-shadow:none; }
+  button.ghost:hover{ background:var(--surface3); }
+  button:disabled{ background:var(--surface2); color:var(--muted); box-shadow:none; border-color:var(--line); opacity:.7; cursor:not-allowed; }
 
   .panel{
-    background:linear-gradient(180deg, rgba(0,0,0,.30), rgba(0,0,0,.16));
-    border:1px solid rgba(255,255,255,.10); border-radius:18px; padding:14px; margin:10px 0;
-    box-shadow:0 12px 30px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08);
-    backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px; margin:10px 0; box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 8px 22px rgba(0,0,0,.28);
   }
-  label{ display:block; font-size:.85rem; margin:8px 0 4px; opacity:.9; }
-  input{ width:100%; padding:12px; border-radius:10px; border:none; font-size:1rem; box-shadow:inset 0 2px 6px rgba(0,0,0,.15); }
-  input.code{ text-transform:uppercase; letter-spacing:3px; font-weight:800; text-align:center;
-    background:linear-gradient(180deg,#fff,#eee); }
+  label{ display:block; font-size:.82rem; margin:9px 0 5px; color:var(--muted); }
+  input{ width:100%; padding:12px; border-radius:10px; border:1px solid var(--line2); font-size:1rem;
+    background:var(--surface2); color:var(--txt); }
+  input::placeholder{ color:var(--muted); }
+  input:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(45,212,191,.18); }
+  input.code{ text-transform:uppercase; letter-spacing:3px; font-weight:800; text-align:center; }
   .scores{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
-  .chip{ background:linear-gradient(180deg, rgba(255,255,255,.17), rgba(255,255,255,.07));
-    border:1px solid rgba(255,255,255,.14); border-radius:999px; padding:6px 10px; font-size:.78rem; }
-  .center{ text-align:center; } .tiny{ font-size:.74rem; opacity:.85; }
-  .waitmsg{ text-align:center; opacity:.9; margin-top:10px; }
-  .big-code{ font-size:2rem; font-weight:800; color:var(--gold); letter-spacing:6px; text-align:center; margin:6px 0;
-    text-shadow:0 0 22px rgba(243,198,75,.5); }
-  .err{ background:#b0353a; color:#fff; border-radius:10px; padding:10px; margin:10px 0; font-size:.88rem; display:none;
-    box-shadow:0 8px 22px rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.18); position:fixed; left:12px; right:12px; bottom:12px; z-index:50; max-width:516px; margin-inline:auto; }
+  .chip{ background:var(--surface2); border:1px solid var(--line); border-radius:999px; padding:6px 10px; font-size:.78rem; color:var(--txt); }
+  .center{ text-align:center; } .tiny{ font-size:.74rem; color:var(--muted); }
+  .waitmsg{ text-align:center; color:var(--muted); margin-top:10px; }
+  .big-code{ font-size:2rem; font-weight:800; color:var(--accent); letter-spacing:6px; text-align:center; margin:6px 0; }
+  .err{ background:#3a1d22; color:#ffd7d7; border-radius:12px; padding:11px 12px; margin:10px 0; font-size:.88rem; display:none;
+    box-shadow:0 10px 28px rgba(0,0,0,.5); border:1px solid rgba(224,88,79,.5); position:fixed; left:12px; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); z-index:50; max-width:516px; margin-inline:auto; }
 
   /* ===================== TAVOLO ===================== */
-  .legend{ display:flex; gap:12px; justify-content:center; font-size:.72rem; opacity:.9; margin:2px 0 8px; }
+  .legend{ display:flex; gap:12px; justify-content:center; font-size:.72rem; color:var(--muted); margin:2px 0 8px; }
   .legend i{ display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:middle; margin-right:4px; }
 
   .felt{
     position:relative; width:100%; aspect-ratio:5/4; margin:6px 0 8px;
     border-radius:48% / 46%;
     background:
-      radial-gradient(120% 120% at 50% 35%, rgba(255,255,255,.07), rgba(0,0,0,.12) 60%, rgba(0,0,0,.3)),
-      linear-gradient(160deg,#0f8a4c,#075c33);
-    border:6px solid rgba(0,0,0,.35);
-    box-shadow:inset 0 6px 26px rgba(0,0,0,.45), 0 14px 30px rgba(0,0,0,.4), 0 0 0 3px rgba(243,198,75,.18);
+      radial-gradient(120% 120% at 50% 32%, rgba(45,212,191,.10), rgba(0,0,0,0) 55%),
+      linear-gradient(165deg, var(--felt1), var(--felt2));
+    border:1px solid var(--line2);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05), inset 0 22px 60px rgba(0,0,0,.35), 0 10px 26px rgba(0,0,0,.35);
   }
   .felt .logo{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    font-weight:800; letter-spacing:3px; font-size:1.1rem; color:rgba(255,255,255,.10); pointer-events:none; }
+    font-weight:800; letter-spacing:3px; font-size:1.1rem; color:rgba(255,255,255,.06); pointer-events:none; }
 
   .roundinfo{ position:absolute; top:7px; left:50%; transform:translateX(-50%); z-index:6;
-    background:rgba(0,0,0,.4); border:1px solid rgba(255,255,255,.14); border-radius:999px;
-    padding:4px 12px; font-size:.74rem; white-space:nowrap; }
+    background:rgba(10,13,18,.6); border:1px solid var(--line2); border-radius:999px;
+    padding:4px 12px; font-size:.74rem; white-space:nowrap; color:var(--txt); }
   .centerbox{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:4;
     display:flex; flex-direction:column; align-items:center; gap:4px; pointer-events:none; }
   .brisc{ display:flex; flex-direction:column; align-items:center; gap:2px; }
   .brisc .card{ width:44px; transform:rotate(7deg); }
-  .brisc .tiny{ opacity:.8; }
-  .pill-tre{ background:linear-gradient(180deg,#9a5bc4,#6c33a0); border:1px solid rgba(255,255,255,.18);
-    border-radius:999px; padding:4px 10px; font-size:.72rem; font-weight:700; }
-  .winnote{ background:rgba(0,0,0,.5); border:1px solid var(--gold); color:var(--gold);
-    border-radius:999px; padding:5px 12px; font-weight:800; font-size:.82rem; text-shadow:0 0 16px rgba(243,198,75,.6); }
+  .brisc .tiny{ color:var(--muted); }
+  .pill-tre{ background:linear-gradient(180deg,#8b5cf6,#6d28d9); border:1px solid rgba(255,255,255,.14);
+    border-radius:999px; padding:4px 10px; font-size:.72rem; font-weight:700; color:#fff; }
+  .winnote{ background:rgba(10,13,18,.66); border:1px solid var(--accent); color:var(--accent);
+    border-radius:999px; padding:5px 12px; font-weight:800; font-size:.82rem; }
 
   /* carta generica */
   .card{ width:var(--card-w); aspect-ratio:5/8; border-radius:9px; overflow:hidden; position:relative;
-    background:linear-gradient(180deg,#fff,#eef0ea); border:1px solid rgba(0,0,0,.18);
-    box-shadow:0 5px 12px rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; color:#222; flex:0 0 auto; }
+    background:#f6f7f4; border:1px solid rgba(0,0,0,.15);
+    box-shadow:0 4px 12px rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; color:#222; flex:0 0 auto; }
   .card img{ width:100%; height:100%; object-fit:contain; display:block; padding:3px; }
   .card .lbl{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     font-size:.62rem; font-weight:700; text-align:center; padding:3px; }
@@ -109,60 +124,60 @@
     display:flex; flex-direction:column; align-items:center; width:84px; }
   .avwrap{ position:relative; width:58px; height:58px; }
   .ring{ position:absolute; inset:-4px; border-radius:50%;
-    background:conic-gradient(var(--ringcol) calc(var(--pct)*3.6deg), rgba(255,255,255,.16) 0); }
+    background:conic-gradient(var(--ringcol) calc(var(--pct)*3.6deg), rgba(255,255,255,.14) 0); }
   .avatar{ position:absolute; inset:3px; border-radius:50%; display:flex; align-items:center; justify-content:center;
     font-weight:800; font-size:1rem; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.5);
-    border:2px solid rgba(255,255,255,.5); box-shadow:0 4px 10px rgba(0,0,0,.45); overflow:hidden; }
-  .pseat.active .avatar{ border-color:var(--gold); box-shadow:0 0 14px rgba(243,198,75,.7); }
+    border:2px solid rgba(255,255,255,.28); box-shadow:0 4px 10px rgba(0,0,0,.45); overflow:hidden; }
+  .pseat.active .avatar{ border-color:var(--accent); box-shadow:0 0 0 2px rgba(45,212,191,.45), 0 0 16px rgba(45,212,191,.5); }
   .pseat.host .avatar::after{ content:"👑"; position:absolute; top:-12px; right:-6px; font-size:.8rem; }
   .pseat.folded{ opacity:.5; }
   .cd{ position:absolute; bottom:-7px; left:50%; transform:translateX(-50%); z-index:9;
-    background:#b0353a; color:#fff; border-radius:999px; min-width:20px; height:20px; padding:0 5px;
+    background:#e0584f; color:#fff; border-radius:999px; min-width:20px; height:20px; padding:0 5px;
     display:flex; align-items:center; justify-content:center; font-size:.72rem; font-weight:800;
-    border:1.5px solid rgba(255,255,255,.7); box-shadow:0 2px 6px rgba(0,0,0,.5); }
-  .cd.warn{ background:#e0a014; }
+    border:1.5px solid rgba(255,255,255,.55); box-shadow:0 2px 6px rgba(0,0,0,.5); }
+  .cd.warn{ background:#e7b53a; color:#3a2a06; }
   .badges{ display:flex; gap:4px; margin-top:9px; }
   .badge{ min-width:22px; height:22px; padding:0 4px; border-radius:999px; display:flex; align-items:center; justify-content:center;
-    font-size:.74rem; font-weight:800; border:1.5px solid rgba(255,255,255,.55); box-shadow:0 2px 5px rgba(0,0,0,.4); }
-  .badge.dich{ background:linear-gradient(180deg,#ffd969,#e0a014); color:#3a2a06; }
-  .badge.pts,.badge.taken{ background:linear-gradient(180deg,#5bc0ff,#2a86d6); color:#06243a; }
+    font-size:.74rem; font-weight:800; border:1px solid rgba(255,255,255,.14); box-shadow:0 2px 5px rgba(0,0,0,.35); }
+  .badge.dich{ background:linear-gradient(180deg,#2dd4bf,#14b8a6); color:var(--accent-ink); }
+  .badge.pts,.badge.taken{ background:linear-gradient(180deg,#5aa0ff,#3b82f6); color:#04152e; }
   /* posizione in classifica (#1, #2…) accanto al cerchietto */
   .rankno{ position:absolute; top:-8px; left:-8px; z-index:9; min-width:20px; height:20px; padding:0 4px;
     border-radius:999px; display:flex; align-items:center; justify-content:center; font-size:.68rem; font-weight:800;
-    background:linear-gradient(180deg,#3a3f4d,#22262f); color:#fff; border:1.5px solid rgba(255,255,255,.6);
+    background:var(--surface3); color:var(--txt); border:1px solid var(--line2);
     box-shadow:0 2px 6px rgba(0,0,0,.5); }
-  .rankno.r1{ background:linear-gradient(180deg,#ffe169,#e0a014); color:#3a2a06; }
+  .rankno.r1{ background:linear-gradient(180deg,#f4c561,#d99b28); color:#3a2a06; border-color:rgba(255,255,255,.3); }
   .pname{ margin-top:4px; font-size:.74rem; font-weight:600; max-width:84px; text-align:center;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-shadow:0 1px 3px rgba(0,0,0,.6); }
   .autotag{ margin-right:3px; }
 
   /* barra controlli di gioco (autogame / tutto mio) */
   .gamectrl{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:8px; }
-  .gamectrl button{ width:auto; margin:0; padding:9px 14px; font-size:.86rem; box-shadow:0 3px 0 #b8861d,0 6px 12px rgba(0,0,0,.22); }
+  .gamectrl button{ width:auto; margin:0; padding:9px 14px; font-size:.86rem; box-shadow:none; }
   .gamectrl button.ghost{ box-shadow:none; }
-  .gamectrl button.danger{ background:linear-gradient(180deg,#ff7a7a,#d63a3a); color:#fff; box-shadow:0 3px 0 #9c2626,0 6px 12px rgba(0,0,0,.25); }
-  .gamectrl button.on{ background:linear-gradient(180deg,#7ee29a,#34a85a); color:#06301a; box-shadow:0 3px 0 #1f7a3e,0 6px 12px rgba(0,0,0,.22); }
+  .gamectrl button.danger{ background:linear-gradient(180deg,#f87171,#dc2626); color:#fff; }
+  .gamectrl button.on{ background:linear-gradient(180deg,#34d399,#10b981); color:#04211d; }
 
   /* la mia mano + barra azioni */
   .myhand{ display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin:4px 0 2px; }
   .myhand .card{ animation:dealIn .3s cubic-bezier(.2,.85,.25,1) both; }
   @keyframes dealIn{ from{opacity:0; transform:translateY(14px) scale(.9)} to{opacity:1; transform:none} }
-  .myhand.playable .card{ opacity:.5; filter:grayscale(.55) brightness(.9); }
+  .myhand.playable .card{ opacity:.42; filter:grayscale(.5) brightness(.85); transition:transform .12s ease, opacity .12s ease; }
+  /* carta giocabile: evidenziazione statica (niente animazione infinita = piu fluido) */
   .myhand.playable .card.legal{ opacity:1; filter:none; transform:translateY(-7px); cursor:pointer;
-    box-shadow:0 0 0 3px var(--gold), 0 12px 20px rgba(0,0,0,.45); animation:legalPulse 1.7s ease-in-out infinite; }
-  @keyframes legalPulse{ 0%,100%{box-shadow:0 0 0 3px rgba(243,198,75,.9),0 12px 20px rgba(0,0,0,.4)} 50%{box-shadow:0 0 0 6px rgba(243,198,75,.5),0 14px 24px rgba(0,0,0,.5)} }
+    box-shadow:0 0 0 2px var(--accent), 0 0 14px rgba(45,212,191,.4), 0 12px 20px rgba(0,0,0,.45); }
   @media(hover:hover){ .myhand.playable .card.legal:hover{ transform:translateY(-13px) scale(1.05); } }
 
   .actionbar{ text-align:center; margin-top:6px; }
   .numgrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(44px,1fr)); gap:8px; margin-top:8px; }
-  .numgrid button{ margin:0; padding:12px 0; box-shadow:0 3px 0 #b8861d, 0 6px 12px rgba(0,0,0,.22); }
+  .numgrid button{ margin:0; padding:12px 0; box-shadow:none; }
   .turnmsg{ font-weight:700; }
-  .turnmsg.me{ color:var(--gold); }
+  .turnmsg.me{ color:var(--accent); }
 
   table.score{ width:100%; border-collapse:collapse; margin-top:8px; }
-  table.score td,table.score th{ padding:7px; border-bottom:1px solid rgba(255,255,255,.15); text-align:left; font-size:.88rem; }
-  .good{ color:#7cf08a; font-weight:700; } .bad{ color:#ff9b9b; font-weight:700; }
-  .win{ font-size:1.25rem; color:var(--gold); font-weight:800; text-align:center; margin:10px 0; text-shadow:0 0 20px rgba(243,198,75,.6); }
+  table.score td,table.score th{ padding:7px; border-bottom:1px solid var(--line); text-align:left; font-size:.88rem; }
+  .good{ color:#4ade80; font-weight:700; } .bad{ color:#f87171; font-weight:700; }
+  .win{ font-size:1.25rem; color:var(--accent); font-weight:800; text-align:center; margin:10px 0; }
 
   /* ===================== CHAT ===================== */
   #chat:empty{ display:none; }
@@ -170,14 +185,14 @@
   /* lobby: pannello ancorato in basso, sempre aperto */
   .chat-dock{ position:fixed; left:50%; transform:translateX(-50%); bottom:0;
     width:100%; max-width:540px; z-index:40;
-    background:linear-gradient(180deg, rgba(0,0,0,.42), rgba(0,0,0,.6));
-    border-top:1px solid rgba(255,255,255,.14); border-radius:16px 16px 0 0;
-    box-shadow:0 -10px 30px rgba(0,0,0,.4); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    background:var(--surface);
+    border-top:1px solid var(--line2); border-radius:16px 16px 0 0;
+    box-shadow:0 -10px 30px rgba(0,0,0,.45);
     display:flex; flex-direction:column; }
   /* lascia spazio in fondo alla pagina così il dock non copre i contenuti */
-  body.has-dock #app{ padding-bottom:240px; }
+  body.has-dock #app{ padding-bottom:calc(240px + env(safe-area-inset-bottom)); }
   /* quando la chat in partita è compressa, basta lo spazio per la barretta */
-  body.has-dock-collapsed #app{ padding-bottom:58px; }
+  body.has-dock-collapsed #app{ padding-bottom:calc(58px + env(safe-area-inset-bottom)); }
   /* dock chat in partita: comprimibile, intestazione cliccabile */
   .chat-dock.ingame .chat-head{ cursor:pointer; user-select:none; }
   .chat-dock.ingame.collapsed{ box-shadow:0 -4px 14px rgba(0,0,0,.35); }
@@ -185,42 +200,42 @@
   .chat-head .chat-badge{ position:static; margin-left:6px; display:inline-flex; vertical-align:middle; }
 
   .chat-head{ font-weight:800; font-size:.9rem; padding:9px 12px;
-    border-bottom:1px solid rgba(255,255,255,.10); display:flex; align-items:center; justify-content:space-between; }
+    border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; }
   .chat-x{ width:auto; margin:0; padding:2px 9px; font-size:.9rem; border-radius:9px;
-    background:rgba(255,255,255,.14); color:#fff; box-shadow:none; border:1px solid rgba(255,255,255,.25); }
+    background:var(--surface3); color:var(--txt); box-shadow:none; border:1px solid var(--line2); }
   .chat-log{ flex:1; overflow-y:auto; padding:8px 12px; display:flex; flex-direction:column; gap:5px;
     max-height:34vh; }
   .chat-dock .chat-log{ max-height:150px; }
-  .chat-empty{ opacity:.6; font-size:.8rem; text-align:center; padding:14px 0; }
+  .chat-empty{ color:var(--muted); font-size:.8rem; text-align:center; padding:14px 0; }
   .chat-line{ font-size:.86rem; line-height:1.3; max-width:88%; align-self:flex-start;
-    background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08);
+    background:var(--surface2); border:1px solid var(--line);
     border-radius:12px; padding:5px 9px; word-break:break-word; }
-  .chat-line.mine{ align-self:flex-end; background:linear-gradient(180deg, rgba(243,198,75,.22), rgba(243,198,75,.12));
-    border-color:rgba(243,198,75,.3); }
-  .chat-nm{ display:block; font-size:.68rem; font-weight:800; color:var(--gold); opacity:.95; margin-bottom:1px; }
-  .chat-line.mine .chat-nm{ color:#ffe39a; }
+  .chat-line.mine{ align-self:flex-end; background:rgba(45,212,191,.14);
+    border-color:rgba(45,212,191,.3); }
+  .chat-nm{ display:block; font-size:.68rem; font-weight:800; color:var(--accent); opacity:.95; margin-bottom:1px; }
+  .chat-line.mine .chat-nm{ color:#8ff0e4; }
   .chat-bd{ display:block; }
 
-  .chat-input{ display:flex; gap:7px; padding:9px 12px; border-top:1px solid rgba(255,255,255,.10);
+  .chat-input{ display:flex; gap:7px; padding:9px 12px; border-top:1px solid var(--line);
     padding-bottom:calc(9px + env(safe-area-inset-bottom)); }
   .chat-input input{ flex:1; padding:10px; }
   .chat-input button{ width:auto; margin:0; padding:10px 16px; }
 
   /* partita: tastino flottante + sheet slide-up */
-  .chat-float{ position:fixed; right:14px; bottom:14px; z-index:40; }
+  .chat-float{ position:fixed; right:calc(14px + env(safe-area-inset-right)); bottom:calc(14px + env(safe-area-inset-bottom)); z-index:40; }
   .chat-fab{ width:54px; height:54px; padding:0; margin:0; border-radius:50%;
-    font-size:1.5rem; box-shadow:0 6px 16px rgba(0,0,0,.45); position:relative; }
+    font-size:1.5rem; box-shadow:0 6px 16px rgba(45,212,191,.3); position:relative; }
   .chat-badge{ position:absolute; top:-4px; right:-4px; min-width:20px; height:20px; padding:0 5px;
-    border-radius:999px; background:#b0353a; color:#fff; font-size:.72rem; font-weight:800;
-    display:flex; align-items:center; justify-content:center; border:1.5px solid rgba(255,255,255,.8); }
+    border-radius:999px; background:#e0584f; color:#fff; font-size:.72rem; font-weight:800;
+    display:flex; align-items:center; justify-content:center; border:1.5px solid rgba(255,255,255,.6); }
   .chat-sheet{ position:fixed; left:50%; transform:translateX(-50%); bottom:0;
     width:100%; max-width:540px; z-index:41;
-    background:linear-gradient(180deg, rgba(0,0,0,.5), rgba(0,0,0,.72));
-    border-top:1px solid rgba(255,255,255,.16); border-radius:16px 16px 0 0;
-    box-shadow:0 -12px 34px rgba(0,0,0,.5); backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px);
+    background:var(--surface);
+    border-top:1px solid var(--line2); border-radius:16px 16px 0 0;
+    box-shadow:0 -12px 34px rgba(0,0,0,.55);
     display:flex; flex-direction:column; animation:chatUp .22s ease both; }
   @keyframes chatUp{ from{ transform:translate(-50%,100%);} to{ transform:translate(-50%,0);} }
-  @media(prefers-reduced-motion:reduce){ .chat-sheet{ animation:none; } }
+  @media(prefers-reduced-motion:reduce){ .chat-sheet{ animation:none; } .myhand .card{ animation:none; } .played .card{ animation:none; } }
 </style>
 </head>
 <body>
@@ -234,6 +249,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const CFG = window.SALI_CONFIG || {};
 const CARD_BASE = CFG.CARD_BASE || "cards/";
+// Precarica una volta tutte le 40 carte: ai re-render le <img> arrivano dalla
+// cache, senza rifetch/flash (rendering piu fluido). Best-effort, non blocca.
+function primeCardCache(){
+  try{
+    const seeds = ["cups","gold","swords","sticks"];
+    const ranks = ["Ace","2","3","4","5","6","7","Jack","Horse","King"];
+    for(const s of seeds) for(const r of ranks){ const im = new Image(); im.decoding="async"; im.src = CARD_BASE + s + "_" + r + ".png"; }
+  }catch(e){}
+}
 const SEED_IT = { cups:"Coppe", gold:"Denari", swords:"Spade", sticks:"Bastoni" };
 const RANK_IT = { Ace:"Asso","2":"2","3":"3","4":"4","5":"5","6":"6","7":"7", Jack:"Fante", Horse:"Cavallo", King:"Re" };
 const TURN_SECONDS = 30; // deve combaciare col server
@@ -281,6 +305,11 @@ function avColor(name){
   return "linear-gradient(160deg, hsl("+h+" 62% 52%), hsl("+((h+28)%360)+" 60% 38%))";
 }
 
+// ---- Service Worker (PWA: installabile + shell offline) ----
+if("serviceWorker" in navigator){
+  window.addEventListener("load", ()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); });
+}
+
 // ---- avvio ----
 (async function init(){
   if(!CFG.SUPABASE_URL || CFG.SUPABASE_URL.indexOf("INSERISCI")>=0){
@@ -293,6 +322,8 @@ function avColor(name){
   supabase = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
     auth: { storage: window.sessionStorage }
   });
+  primeCardCache(); // scalda la cache delle immagini carte
+
   // il link "recupero password" riapre l'app con un token: supabase-js lo
   // processa e emette PASSWORD_RECOVERY (durante getSession) → vista "nuova password".
   // Il flag evita che startAuthedApp sovrascriva subito la vista col render della home.
@@ -333,6 +364,11 @@ async function doPlay(card){ await invoke("play_card", { gameId, card }); }
 async function doContinue(){ await invoke("continue", { gameId }); }
 async function doSetBots(count){ await invoke("set_bots", { gameId, count }); }
 async function doSetStartCards(v){ await invoke("set_start_cards", { gameId, value:v }); }
+async function doSetTrash(on){ await invoke("set_trash_talk", { gameId, on:!!on }); }
+async function doEndGame(){
+  if(!confirm("Terminare la partita per tutti? Non ci sarà un vincitore e non verrà salvata.")) return;
+  await invoke("end_game", { gameId });
+}
 async function doToggleAutoplay(){
   const me = players.find(p=>p.seat===mySeat);
   const turningOn = !(me && me.autoplay);
@@ -345,7 +381,7 @@ async function doClaimAll(){
 }
 async function doAdvanceBot(){ await invoke("advance_bot", { gameId }); }
 
-window.UI = { doCreate, doJoin, doStart, doDeclare, doPlay, doContinue, doSetBots, doSetStartCards, doToggleAutoplay, doClaimAll,
+window.UI = { doCreate, doJoin, doStart, doDeclare, doPlay, doContinue, doSetBots, doSetStartCards, doSetTrash, doEndGame, doToggleAutoplay, doClaimAll,
               authTab, doLogin, doSignup, doSendReset, doRecover, doLogout,
               openStats, statsGo, closeStats };
 
@@ -375,11 +411,15 @@ function gameControlsHTML(canClaim){
   const autoBtn = '<button class="'+(auto?'on':'ghost')+'" id="btn-auto">'+
     (auto?'🙋 Riprendi controllo':'🤖 Autogame')+'</button>';
   const claimBtn = canClaim ? '<button class="danger" id="btn-claim">🃏 TUTTO MIO</button>' : '';
-  return '<div class="gamectrl">'+autoBtn+claimBtn+'</div>';
+  // solo l'host, e solo mentre si gioca: può terminare la partita per tutti
+  const endBtn = (game.host_user===myUserId && game.status==="playing")
+    ? '<button class="danger" id="btn-end">🚪 Termina partita</button>' : '';
+  return '<div class="gamectrl">'+autoBtn+claimBtn+endBtn+'</div>';
 }
 function wireGameControls(){
   const a=document.getElementById("btn-auto"); if(a) a.onclick=()=>UI.doToggleAutoplay();
   const c=document.getElementById("btn-claim"); if(c) c.onclick=()=>UI.doClaimAll();
+  const e=document.getElementById("btn-end"); if(e) e.onclick=()=>UI.doEndGame();
 }
 
 // ---- realtime + refresh ----
@@ -388,7 +428,7 @@ async function enterGame(){
   channel = supabase.channel("game:"+gameId);
   for(const table of ["games","game_players","hands","round_results"]){
     const filter = table==="games" ? ("id=eq."+gameId) : ("game_id=eq."+gameId);
-    channel.on("postgres_changes", { event:"*", schema:"public", table, filter }, ()=>refreshAll());
+    channel.on("postgres_changes", { event:"*", schema:"public", table, filter }, ()=>scheduleRefresh());
   }
   channel.on("postgres_changes",
     { event:"INSERT", schema:"public", table:"chat_messages", filter:"game_id=eq."+gameId },
@@ -401,6 +441,15 @@ async function enterGame(){
   chatUnread = 0;
   chatOpen = true;   // la chat in partita parte aperta (dock comprimibile in fondo)
   renderChat();
+}
+
+// Coalescente: una raffica di eventi realtime (una sola mossa tocca
+// games+game_players+round_results ⇒ 3-4 eventi) diventa UN solo refresh,
+// invece di 3-4 fetch+rebuild completi della pagina. Molto meno lag in partita.
+let _refreshTimer=null;
+function scheduleRefresh(){
+  if(_refreshTimer) return;
+  _refreshTimer=setTimeout(()=>{ _refreshTimer=null; refreshAll(); }, 80);
 }
 
 async function refreshAll(){
@@ -471,7 +520,7 @@ function cardHTML(card, opts){ opts=opts||{};
   const cls = ["card"]; if(opts.legal) cls.push("legal");
   const data = opts.legal ? ' data-card=\''+JSON.stringify(card)+'\' role="button"' : '';
   return '<div class="'+cls.join(" ")+'"'+data+'>'+
-    '<img src="'+esc(file)+'" alt="'+esc(RANK_IT[card.rank]+" di "+SEED_IT[card.seed])+'" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'+
+    '<img src="'+esc(file)+'" alt="'+esc(RANK_IT[card.rank]+" di "+SEED_IT[card.seed])+'" decoding="async" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'+
     '<span class="lbl" style="display:none">'+esc(RANK_IT[card.rank])+'<br>'+esc(SEED_IT[card.seed])+'</span></div>';
 }
 function nameOf(seat){ const p=players.find(x=>x.seat===seat); return p?p.display_name:("Posto "+seat); }
@@ -554,6 +603,7 @@ function render(){
 
 function renderBody(){
   if(!game){ renderHome(); return; }
+  if(game.status==="aborted"){ return renderAborted(); }
   if(game.status==="lobby"){ return renderWaiting(); }
   switch(game.phase){
     case "declaring": return renderDeclaring();
@@ -789,6 +839,7 @@ function renderWaiting(){
 
   let botCtrl = "";
   let startCtrl = "";
+  let trashCtrl = "";
   if(isHost){
     let btns="";
     for(let k=0;k<=maxBots;k++){
@@ -803,6 +854,13 @@ function renderWaiting(){
     }
     startCtrl = '<p class="tiny" style="margin-top:12px">Parti da 🃏 (1 = partita completa)</p>'+
       '<div style="display:flex;flex-wrap:wrap;justify-content:center">'+sbtns+'</div>';
+
+    const trashOn = game.bots_trash !== false;  // default acceso
+    trashCtrl = '<p class="tiny" style="margin-top:12px">Bot che insultano 😈</p>'+
+      '<div style="display:flex;justify-content:center;gap:8px">'+
+      '<button class="'+(trashOn?'':'ghost')+'" style="width:auto;margin:0;padding:8px 18px" data-trash="1">Sì</button>'+
+      '<button class="'+(!trashOn?'':'ghost')+'" style="width:auto;margin:0;padding:8px 18px" data-trash="0">No</button>'+
+      '</div>';
   }
 
   app.innerHTML =
@@ -814,6 +872,7 @@ function renderWaiting(){
     roundLine+
     startCtrl+
     botCtrl+
+    trashCtrl+
     (isHost
       ? (n>=4 ? '<button onclick="UI.doStart()">Inizia partita ('+n+' giocatori)</button>'
               : '<p class="waitmsg">Servono almeno 4 giocatori (max 5). Aggiungi amici o bot.</p>')
@@ -824,6 +883,8 @@ function renderWaiting(){
     .forEach(b=>b.onclick=()=>UI.doSetBots(parseInt(b.dataset.bots,10)));
   if(isHost) document.querySelectorAll("[data-startc]")
     .forEach(b=>b.onclick=()=>UI.doSetStartCards(parseInt(b.dataset.startc,10)));
+  if(isHost) document.querySelectorAll("[data-trash]")
+    .forEach(b=>b.onclick=()=>UI.doSetTrash(b.dataset.trash==="1"));
 }
 
 function renderDeclaring(){
@@ -893,6 +954,15 @@ function renderFinished(){
   '<div class="panel"><table class="score"><tr><th>#</th><th>Giocatore</th><th>Punti</th></tr>'+
   order.map((p,i)=>'<tr><td>'+(medals[i]||(i+1))+'</td><td>'+esc(p.display_name)+'</td><td>'+p.score+'</td></tr>').join("")+
   '</table><button onclick="location.reload()">Nuova partita</button></div>';
+}
+
+// Partita chiusa dall'host a metà: nessun vincitore.
+function renderAborted(){
+  app.innerHTML = '<h1>Partita annullata</h1>'+
+    '<div class="panel center">'+
+    '<p class="waitmsg">🚪 L\'host ha terminato la partita.</p>'+
+    '<p class="tiny" style="margin-top:6px">Nessun vincitore: questa partita non conta per lo storico.</p>'+
+    '<button onclick="location.reload()">Nuova partita</button></div>';
 }
 
 // ---- CHAT (componente indipendente dal render del gioco) ----
