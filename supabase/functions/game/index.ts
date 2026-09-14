@@ -79,6 +79,8 @@ Deno.serve(async (req) => {
       case "send_message":  return await sendMessage(db, user.id, body);
       case "set_bots":      return await setBots(db, user.id, body);
       case "set_start_cards": return await setStartCards(db, user.id, body);
+      case "set_trash_talk": return await setTrashTalk(db, user.id, body);
+      case "end_game":      return await endGame(db, user.id, body);
       case "toggle_autoplay": return await toggleAutoplay(db, user.id, body);
       case "claim_all":     return await claimAll(db, user.id, body);
       case "advance_bot":   return await advanceBot(db, user.id, body);
@@ -356,6 +358,37 @@ async function setStartCards(db: any, userId: string, body: any) {
   return json({ ok: true });
 }
 
+// Host: accende/spegne il trashtalking dei bot (solo in lobby).
+async function setTrashTalk(db: any, userId: string, body: any) {
+  const { data: game } = await db.from("games").select("*").eq("id", body.gameId).single();
+  if (!game) return json({ error: "Partita non trovata" }, 404);
+  if (game.host_user !== userId) return json({ error: "Solo l'host può cambiare questa impostazione" }, 403);
+  if (game.status !== "lobby") return json({ error: "Si sceglie prima dell'inizio" }, 400);
+
+  const on = body.on === true || body.on === "true" || body.on === 1;
+  const { error } = await db.from("games").update({ bots_trash: on }).eq("id", game.id);
+  if (error) return json({ error: error.message }, 400);
+  return json({ ok: true, bots_trash: on });
+}
+
+// Host: TERMINA la partita a metà. Nessun vincitore, non finalizzata nello
+// storico: stato 'aborted'. Consentito solo mentre si sta giocando.
+async function endGame(db: any, userId: string, body: any) {
+  const { data: game } = await db.from("games").select("*").eq("id", body.gameId).single();
+  if (!game) return json({ error: "Partita non trovata" }, 404);
+  if (game.host_user !== userId) return json({ error: "Solo l'host può terminare la partita" }, 403);
+  if (game.status !== "playing") return json({ error: "La partita non è in corso" }, 400);
+
+  const { error } = await db.from("games")
+    .update({ status: "aborted", phase: "aborted", turn_deadline: null })
+    .eq("id", game.id);
+  if (error) return json({ error: error.message }, 400);
+
+  // notifica in chat (best-effort)
+  await systemChat(db, game, -1, "Sistema", "🚪 L'host ha terminato la partita.");
+  return json({ ok: true });
+}
+
 // Host: imposta QUANTI bot avere nella stanza (solo in lobby). I bot sono righe
 // game_players con is_bot=true e user_id sintetico. Ricompatta i posti a 0..n-1.
 async function setBots(db: any, userId: string, body: any) {
@@ -411,7 +444,9 @@ async function systemChat(db: any, game: any, seat: number, name: string, text: 
 }
 
 // ================= TRASHTALKING DEI BOT (sfottò tra amici) =================
-// Interruttore: metti false per spegnere tutto.
+// Kill-switch globale (false = spento ovunque). Oltre a questo, ogni partita
+// ha il suo interruttore game.bots_trash scelto dall'host in lobby: i bot
+// sfottono solo se TRASH_TALK && game.bots_trash !== false.
 const TRASH_TALK = true;
 
 // Battute (italiano, tono pesante da amici). Placeholder: {name} {d} {t}.
@@ -479,7 +514,7 @@ function pickSpeakerBot(players: any[], excludeSeat: number) {
 
 // Fine mano: un bot sfotte chi ha sbagliato di più la dichiarazione (preferendo gli umani).
 async function trashAfterRound(db: any, game: any, players: any[], outcomeRows: any[]) {
-  if (!TRASH_TALK) return;
+  if (!TRASH_TALK || game.bots_trash === false) return;
   if (!players.some((p) => p.is_bot)) return;
   if (Math.random() > 0.65) return;                       // non a ogni mano
   const bySeat = new Map(players.map((p) => [p.seat, p]));
@@ -501,7 +536,7 @@ async function trashAfterRound(db: any, game: any, players: any[], outcomeRows: 
 
 // Fine partita: sfottò all'ultimo in classifica + gloat se vince un bot.
 async function trashAtGameEnd(db: any, game: any, players: any[]) {
-  if (!TRASH_TALK) return;
+  if (!TRASH_TALK || game.bots_trash === false) return;
   if (!players.some((p) => p.is_bot)) return;
   const sorted = players.slice().sort((a, b) => a.score - b.score);
   const last = sorted[0];
@@ -515,7 +550,7 @@ async function trashAtGameEnd(db: any, game: any, players: any[]) {
 
 // Presa rubata: ogni tanto, quando un bot vince una presa con un umano dentro.
 async function trashStolenTrick(db: any, game: any, newPlays: E.Play[], winnerSeat: number) {
-  if (!TRASH_TALK) return;
+  if (!TRASH_TALK || game.bots_trash === false) return;
   if (Math.random() > 0.2) return;                        // raramente, niente spam
   const { data: players } = await db.from("game_players")
     .select("seat,user_id,display_name,is_bot").eq("game_id", game.id);
@@ -611,7 +646,7 @@ async function claimAll(db: any, userId: string, body: any) {
     await systemChat(db, game, me.seat, me.display_name,
       "❌ TUTTO MIO sbagliato! Non prenderebbe tutto: penalità −" + penalty + ". Si continua.");
     // un bot infierisce sul TUTTO MIO fallito
-    if (TRASH_TALK) {
+    if (TRASH_TALK && game.bots_trash !== false) {
       const { data: pls } = await db.from("game_players")
         .select("seat,user_id,display_name,is_bot").eq("game_id", game.id);
       const speaker = pickSpeakerBot(pls ?? [], me.seat);
